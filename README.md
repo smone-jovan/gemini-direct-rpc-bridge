@@ -20,18 +20,39 @@ Headless, high-performance, ultra-low memory (~25 MB RAM) Direct HTTP RPC Bridge
 - **OpenAI Compatible**: Seamless drop-in replacement exposing `/v1/chat/completions`, `/v1/models`, and `/health`. Works out-of-the-box with Cursor, Continue, Cline, and OpenAI SDKs.
 - **Real-Time SSE Streaming**: Native Server-Sent Events (`stream: true`) support delivers low-latency chunked streaming directly to modern AI coding assistants.
 - **High-Performance JSON Engine**: Accelerated by `orjson` with automatic fallback to standard library `json`.
-- **Multi-Session Isolation**:
-  - **Stateless Execution (Single-Turn)**: One-off prompt inference without polluting conversational history.
-  - **Stateful Conversation (Multi-Turn Chat)**: Multi-turn conversations track context deterministically when `session_id` is passed.
+- **The Complete 2×2 Execution Matrix**: Full architectural support for **Stateless Chat**, **Stateful Chat**, **Stateless Task**, and **Stateful Task**.
 - **LRU Cache Eviction**: Managed with `collections.OrderedDict` bounded up to 100 concurrent sessions, preventing unbounded memory growth.
 - **Production-Grade Concurrency Protection**: Built-in `asyncio.Lock` with double-checked locking prevents cold-start race conditions and duplicate authentication storms.
-- **Extended Thinking & Model Mapping**:
-  - `gemini-4-hydrogen` / `fast`: Super-fast everyday tasks.
-  - `gemini-pro` / `argon` / `research`: Deep reasoning mode with `thinking_level: high`.
-  - `gemini-carbon`: Extreme-frontier reasoning (Most complex work, available for eligible Google One AI Premium/Ultra accounts).
-  - `gemini-flash-lite`: Low-latency quick answers.
 - **Automated Keepalive**: Background session auto-refresh keeps cookies alive continuously.
 - **Flexible Credential Loading**: Supports `cookies.json` or environment variables (`GEMINI_SECURE_1PSID`, `GEMINI_SECURE_1PSIDTS`).
+
+---
+
+### 🧩 The 2×2 Architecture Matrix: Chat vs. Task & Stateless vs. Stateful
+
+In the official Google Gemini interface and agentic engineering, **Execution Mode (`mode`)** and **Memory State (`session_id`)** are two orthogonal dimensions. They combine into four distinct operational modes:
+
+| Dimension | **Chat Mode** (`"mode": "chat"`) | **Task Mode** (`"mode": "task"`) |
+| :--- | :--- | :--- |
+| **Stateless**<br>*(No `session_id`)* | **1. Stateless Chat**<br>One-off conversational inquiry without history or memory retention. Ideal for quick translations, definitions, and one-liner queries. | **3. Stateless Task**<br>Single-turn autonomous agent execution without history pollution. Runs directly on **4 Argon** (Code & analysis) or **4 Hydrogen** (Everyday help). |
+| **Stateful**<br>*(With `session_id`)* | **2. Stateful Chat**<br>Multi-turn conversational dialogue where conversational context and memory are preserved across turns. | **4. Stateful Task**<br>Multi-turn agentic task where past instructions, decisions, and task state are maintained across consecutive steps. |
+
+---
+
+### 🔍 Google Gemini UI Alignment: Chat vs. Task
+
+In Google Gemini's official UI, there is a dedicated toggle pill: **`[ Chat | Task ]`**:
+
+1. **Mode `Chat`**:
+   - Conversational assistant mode.
+   - Access to full model spectrum (`gemini-4-hydrogen`, `gemini-pro`, `gemini-carbon`, `gemini-flash-lite`).
+   - Supports manual **Thinking Level** adjustments (`thinking_level: "high"` / `"low"`).
+2. **Mode `Task`** (*Activates `+ Describe task` / "Tag me in! What's next?"*):
+   - Autonomous agentic pipeline.
+   - Strictly restricted by Google to **exactly two engines**:
+     - **`Everyday help`** $\rightarrow$ **4 Hydrogen** (Fast planning, everyday delegation)
+     - **`Code & analysis`** $\rightarrow$ **4 Argon** (Deep code execution & architectural analysis)
+   - **No Manual Thinking Toggle**: Google omits the manual thinking slider in Task mode because planning and reasoning are handled autonomously by the backend agent loop.
 
 ---
 
@@ -45,16 +66,6 @@ Headless, high-performance, ultra-low memory (~25 MB RAM) Direct HTTP RPC Bridge
 | **Response Latency** | High (DOM injection delays) | High (DOM rendering overhead) | **Low (Direct protobuf / RPC wire speed)** |
 | **DOM Drift Resilience** | Breaks when UI updates | Breaks when UI updates | **Resilient (Direct internal RPC endpoint)** |
 | **Session Isolation** | Shared single browser tab | Cumbersome multi-profile tabs | **Native LRU session map via `session_id`** |
-
----
-
-### 🧩 Architectural Note: Task vs. Chat in Google Gemini & Agentic Systems
-
-In the official Google Gemini and agentic developer ecosystem:
-- **Task Mode (Sandboxed Execution)**: Represents an autonomous execution session equipped with a **real computational sandbox** (e.g. Google's Cloud Run / gVisor Python Code Interpreter, or Antigravity's local Terminal / Workspace Sandbox). In this mode, the model does not merely generate text; it writes code, executes it inside the sandbox, inspects `stdout`/`stderr`, reads/writes project files, and self-corrects based on empirical execution results.
-- **Chat Mode (Conversational / Non-Sandboxed)**: Represents pure token inference where the model acts conversationally based on internal weights, without an interactive code execution sandbox.
-
-**Gemini Direct RPC Bridge** serves as the **high-speed RPC transport layer**. When integrated with agentic developer frameworks (such as Antigravity, Claude Code, Cursor, or Aider), the agent harnesses this bridge to perform **true sandboxed tasks** on your machine at wire speed!
 
 ---
 
@@ -100,82 +111,86 @@ export GEMINI_SECURE_1PSIDTS="your_cookie_value_here"
 pip install -r requirements.txt
 ```
 
-#### 5. Launch the Server
+#### 5. Run the Bridge
 ```bash
 python bridge.py
 ```
-Or on Windows, double-click `Jalankan_Bridge.bat` (or use `start_bridge_silent.vbs` to run silently in the background).
+Or double-click `Jalankan_Bridge.bat` (Windows).
 
-The server will be available at:
-- **Base URL**: `http://127.0.0.1:8765/v1`
-- **Health Check**: `http://127.0.0.1:8765/health`
+The local endpoint will be online at `http://127.0.0.1:8765/v1`.
 
 ---
 
-### 💻 Usage Examples
+### 💡 Usage Examples for All 4 Modes
 
-#### 1. cURL (Stateless Prompt)
+#### 1. Mode 1: Stateless Chat (cURL)
 ```bash
 curl -X POST http://127.0.0.1:8765/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
+    "mode": "chat",
     "model": "gemini-4-hydrogen",
     "messages": [
-      {"role": "user", "content": "Explain quantum entanglement in 2 sentences."}
+      {"role": "user", "content": "What is the boiling point of water in Kelvin?"}
     ]
   }'
 ```
 
-#### 2. cURL (Deep Reasoning with Argon)
-```bash
-curl -X POST http://127.0.0.1:8765/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "gemini-pro",
-    "thinking_level": "high",
-    "messages": [
-      {"role": "user", "content": "Analyze the time complexity of dual-pivot quicksort in edge cases."}
-    ]
-  }'
-```
-
-#### 3. cURL (Stateful Multi-Turn Conversation)
+#### 2. Mode 2: Stateful Chat (Multi-Turn with `session_id`)
 ```bash
 # Turn 1
 curl -X POST http://127.0.0.1:8765/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "session_id": "session-workspace-1",
-    "messages": [{"role": "user", "content": "My secret code is 4299."}]
+    "mode": "chat",
+    "session_id": "session-dev-chat",
+    "messages": [{"role": "user", "content": "My secret key is 8842."}]
   }'
 
 # Turn 2 (Context remembered!)
 curl -X POST http://127.0.0.1:8765/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "session_id": "session-workspace-1",
-    "messages": [{"role": "user", "content": "What was my secret code?"}]
+    "mode": "chat",
+    "session_id": "session-dev-chat",
+    "messages": [{"role": "user", "content": "What was my secret key?"}]
   }'
 ```
 
-#### 4. Python OpenAI Client
-```python
-from openai import OpenAI
-
-client = OpenAI(
-    base_url="http://127.0.0.1:8765/v1",
-    api_key="not-needed"
-)
-
-response = client.chat.completions.create(
-    model="gemini-4-hydrogen",
-    messages=[
-        {"role": "system", "content": "You are an expert engineer."},
-        {"role": "user", "content": "Write a fast Fibonacci generator in Python."}
+#### 3. Mode 3: Stateless Task (Code & Analysis with 4 Argon)
+```bash
+curl -X POST http://127.0.0.1:8765/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "mode": "task",
+    "model": "argon",
+    "messages": [
+      {"role": "user", "content": "Analyze dual-pivot quicksort worst-case complexity and provide a C99 implementation."}
     ]
-)
+  }'
+```
 
-print(response.choices[0].message.content)
+#### 4. Mode 4: Stateful Task (Multi-Turn Pipeline with 4 Argon)
+```bash
+# Step 1
+curl -X POST http://127.0.0.1:8765/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "mode": "task",
+    "model": "argon",
+    "session_id": "task-pipeline-1",
+    "messages": [{"role": "user", "content": "Define the JSON schema for a payment webhook."}]
+  }'
+
+# Step 2
+curl -X POST http://127.0.0.1:8765/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "mode": "task",
+    "model": "argon",
+    "session_id": "task-pipeline-1",
+    "messages": [{"role": "user", "content": "Write unit tests covering that exact schema."}]
+  }'
 ```
 
 #### 5. Integration with Cursor / Continue.dev
@@ -184,14 +199,14 @@ In your `config.json` for Continue or Cursor AI:
 {
   "models": [
     {
-      "title": "Gemini Hydrogen (Local Bridge)",
+      "title": "Gemini 4 Hydrogen (Local Bridge)",
       "provider": "openai",
       "model": "gemini-4-hydrogen",
       "apiBase": "http://127.0.0.1:8765/v1",
       "apiKey": "local"
     },
     {
-      "title": "Gemini Argon Reasoning (Local Bridge)",
+      "title": "Gemini 4 Argon (Local Bridge)",
       "provider": "openai",
       "model": "gemini-pro",
       "apiBase": "http://127.0.0.1:8765/v1",
@@ -207,32 +222,45 @@ In your `config.json` for Continue or Cursor AI:
 
 ### 🌟 Gambaran Umum & Fitur Unggulan
 
-**Gemini Direct RPC Bridge** adalah jembatan HTTP RPC lokal yang memungkinkan Anda mengakses kecerdasan Google Gemini Web secara gratis dengan protokol OpenAI-compatible tanpa membuka jendela peramban (browser) sama sekali.
+**Gemini Direct RPC Bridge** adalah jembatan HTTP RPC lokal berkinerja tinggi yang memungkinkan Anda mengakses model Google Gemini Web secara gratis dengan protokol OpenAI-compatible tanpa membuka jendela peramban (browser) sama sekali.
 
 - **100% Tanpa Browser**: Beroperasi sepenuhnya di latar belakang via HTTP RPC native (`curl-cffi` + `gemini-webapi`). Tidak membutuhkan Chrome, Selenium, atau ekstensi.
 - **Konsumsi Memori Sangat Hemat (~25 MB RAM)**: Berjalan stabil tanpa membebani sistem Anda.
-- **Pemisahan Mode Stateless vs Stateful**:
-  - **Stateless Execution (Single-Turn)**: Panggilan mandiri satu kali untuk eksekusi tanpa mencemari riwayat.
-  - **Stateful Chat (Multi-Turn)**: Obrolan bersambung dengan pelacakan konteks deterministik menggunakan `session_id`.
+- **Mendukung Matriks Eksekusi 2×2 Lengkap**:
+  - **Stateless Chat** vs **Stateful Chat**
+  - **Stateless Task** vs **Stateful Task**
 - **Dukungan Streaming Real-Time (SSE)**: Mendukung parameter `"stream": true` secara native via Server-Sent Events untuk Cursor, Continue.dev, dan AI IDE modern.
 - **Akselerasi Serialisasi orjson**: Kecepatan pemrosesan JSON ultra-cepat dengan fallback otomatis ke library standar `json`.
 - **Manajemen Memori Bounded LRU**: Menggusur sesi terlama secara otomatis bila melampaui 100 sesi aktif (*anti memory leak*).
 - **Proteksi Concurrency Cold-Start**: Dilengkapi `asyncio.Lock` agar terhindar dari *race condition* autentikasi saat request masuk serempak.
-- **Dukungan Model**:
-  - `gemini-4-hydrogen`: Kecepatan tinggi untuk eksekusi tugas harian.
-  - `gemini-pro` (Argon): Penalaran mendalam (*deep reasoning*) dengan dukungan `thinking_level: high`.
-  - `gemini-carbon`: Penalaran ekstrem tingkat lanjut (*Most complex work*, aktif jika akun Google Anda memiliki akses Google One AI Premium/Ultra).
-  - `gemini-flash-lite`: Respons cepat dan ringkas.
 
 ---
 
-### 🧩 Catatan Arsitektur: Perbedaan Mode Task vs. Chat di Ekosistem Gemini
+### 🧩 Matriks Arsitektur 2×2: Chat vs Task & Stateless vs Stateful
 
-Secara resmi di ekosistem Google Gemini dan AI Agentic (seperti Antigravity):
-- **Mode Task (Sandboxed Execution)**: Sesi eksekusi otonom yang dibekali dengan **Sandbox Komputasi Nyata** (seperti *Python Code Interpreter Sandbox* di Google Cloud, atau *Workspace/Terminal Sandbox* di Antigravity). Pada mode ini, AI tidak hanya mengetik teks, melainkan mengeksekusi kode secara nyata, menguji hasil *output*, dan memanipulasi berkas proyek di lingkungan terisolasi yang aman.
-- **Mode Chat (Conversational Non-Sandbox)**: Sesi percakapan murni di mana model bertukar pengetahuan konseptual tanpa menyentuh sandbox eksekusi kode.
+Dalam antarmuka resmi Google Gemini dan rekayasa AI modern, **Mode Eksekusi (`mode`)** dan **Status Memori (`session_id`)** adalah dua dimensi yang terpisah:
 
-**Gemini Direct RPC Bridge** bertindak sebagai **lapisan transportasi RPC berkecepatan tinggi**. Ketika dipadukan dengan framework agentic lokal (seperti Antigravity atau Cursor), agen memanfaatkan endpoint bridge ini untuk menjalankan **Task Sejati di dalam sandbox komputer Anda** secara otomatis dan gratis!
+| Dimensi | **Mode Chat** (`"mode": "chat"`) | **Mode Task** (`"mode": "task"`) |
+| :--- | :--- | :--- |
+| **Stateless**<br>*(Tanpa `session_id`)* | **1. Stateless Chat**<br>Tanya-jawab satu kali tanpa riwayat percakapan. Cocok untuk terjemahan cepat, definisi, atau tanya rumus instan. | **3. Stateless Task**<br>Eksekusi tugas agen otonom satu kali tanpa mencemari riwayat obrolan. Berjalan langsung di **4 Argon** (Code & analysis) atau **4 Hydrogen** (Everyday help). |
+| **Stateful**<br>*(Dengan `session_id`)* | **2. Stateful Chat**<br>Percakapan multi-turn bersambung di mana konteks dan memori percakapan diingat lintas giliran obrolan. | **4. Stateful Task**<br>Tugas otonom bertahap di mana instruksi, keputusan teknis, dan state tugas diingat pada setiap tahapan berikutnya. |
+
+---
+
+### 🔍 Penyelarasan Antarmuka Resmi Gemini: Chat vs. Task
+
+Di antarmuka resmi Google Gemini, terdapat tombol fisik pemilih: **`[ Chat | Task ]`**:
+
+1. **Mode `Chat`**:
+   - Mode percakapan umum.
+   - Pilihan model lengkap (`gemini-4-hydrogen`, `gemini-pro`, `gemini-carbon`, `gemini-flash-lite`).
+   - Menyediakan setelan manual **Thinking Level** (`thinking_level: "high"` / `"low"`).
+2. **Mode `Task`** (*Mengaktifkan input `+ Describe task` / "Tag me in! What's next?"*):
+   - Pipeline agen otonom khusus.
+   - Dibatasi secara ketat oleh Google hanya pada **dua mesin penggerak**:
+     - **`Everyday help`** $\rightarrow$ **4 Hydrogen** (Otomasi harian cepat)
+     - **`Code & analysis`** $\rightarrow$ **4 Argon** (Analisis mendalam & rekayasa kode)
+   - **Tanpa Toggle Thinking Manual**: Google meniadakan slider thinking manual di mode Task karena proses penalaran dan perencanaan agen sudah berjalan otomatis di arsitektur internal Google.
 
 ---
 
