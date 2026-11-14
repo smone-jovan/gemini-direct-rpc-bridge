@@ -2,7 +2,7 @@
 Gemini Direct RPC Bridge - Pure HTTP Bridge for Google Gemini Web (Metode 2)
 Zero browser needed! 100% background HTTP RPC.
 Supports:
-- Multi-Session Isolation (Chat vs Task via session_id)
+- Multi-Session Isolation (Stateless Execution vs Stateful Chat via session_id)
 - Extended Thinking Toggle (thinking_level: high/low or extended_thinking: true/false)
 - Native Model Selection: gemini-4-hydrogen, gemini-pro (Argon), gemini-flash-lite
 - Server-Sent Events (SSE) Real-Time Streaming (stream: true)
@@ -164,7 +164,7 @@ async def ask_gemini(
 ) -> str:
     client = await ensure_client()
     target_model = resolve_target_model(model)
-    print(f"[Bridge] Mengirim prompt ke '{target_model}' (Session: {session_id or 'Stateless/Task'}, Thinking: {extended_thinking})...", flush=True)
+    print(f"[Bridge] Mengirim prompt ke '{target_model}' (Session: {session_id or 'Stateless Execution'}, Thinking: {extended_thinking})...", flush=True)
 
     if session_id:
         chat = await get_or_create_session(session_id, target_model)
@@ -286,8 +286,8 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
                 "active_sessions": list(active_sessions.keys()),
                 "capabilities": {
                     "extended_thinking": True,
+                    "stateless_and_stateful": True,
                     "session_isolation": True,
-                    "task_vs_chat": True,
                     "streaming": True,
                     "orjson_accelerated": "orjson" in sys.modules
                 },

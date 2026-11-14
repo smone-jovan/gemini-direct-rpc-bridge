@@ -21,8 +21,8 @@ Headless, high-performance, ultra-low memory (~25 MB RAM) Direct HTTP RPC Bridge
 - **Real-Time SSE Streaming**: Native Server-Sent Events (`stream: true`) support delivers low-latency chunked streaming directly to modern AI coding assistants.
 - **High-Performance JSON Engine**: Accelerated by `orjson` with automatic fallback to standard library `json`.
 - **Multi-Session Isolation**:
-  - **Task Mode (Stateless)**: One-off prompts execute without polluting conversational history.
-  - **Chat Mode (Stateful)**: Multi-turn conversations track context deterministically when `session_id` is passed.
+  - **Stateless Execution (Single-Turn)**: One-off prompt inference without polluting conversational history.
+  - **Stateful Conversation (Multi-Turn Chat)**: Multi-turn conversations track context deterministically when `session_id` is passed.
 - **LRU Cache Eviction**: Managed with `collections.OrderedDict` bounded up to 100 concurrent sessions, preventing unbounded memory growth.
 - **Production-Grade Concurrency Protection**: Built-in `asyncio.Lock` with double-checked locking prevents cold-start race conditions and duplicate authentication storms.
 - **Extended Thinking & Model Mapping**:
@@ -45,6 +45,16 @@ Headless, high-performance, ultra-low memory (~25 MB RAM) Direct HTTP RPC Bridge
 | **Response Latency** | High (DOM injection delays) | High (DOM rendering overhead) | **Low (Direct protobuf / RPC wire speed)** |
 | **DOM Drift Resilience** | Breaks when UI updates | Breaks when UI updates | **Resilient (Direct internal RPC endpoint)** |
 | **Session Isolation** | Shared single browser tab | Cumbersome multi-profile tabs | **Native LRU session map via `session_id`** |
+
+---
+
+### 🧩 Architectural Note: Task vs. Chat in Google Gemini & Agentic Systems
+
+In the official Google Gemini and agentic developer ecosystem:
+- **Task Mode (Sandboxed Execution)**: Represents an autonomous execution session equipped with a **real computational sandbox** (e.g. Google's Cloud Run / gVisor Python Code Interpreter, or Antigravity's local Terminal / Workspace Sandbox). In this mode, the model does not merely generate text; it writes code, executes it inside the sandbox, inspects `stdout`/`stderr`, reads/writes project files, and self-corrects based on empirical execution results.
+- **Chat Mode (Conversational / Non-Sandboxed)**: Represents pure token inference where the model acts conversationally based on internal weights, without an interactive code execution sandbox.
+
+**Gemini Direct RPC Bridge** serves as the **high-speed RPC transport layer**. When integrated with agentic developer frameworks (such as Antigravity, Claude Code, Cursor, or Aider), the agent harnesses this bridge to perform **true sandboxed tasks** on your machine at wire speed!
 
 ---
 
@@ -201,9 +211,9 @@ In your `config.json` for Continue or Cursor AI:
 
 - **100% Tanpa Browser**: Beroperasi sepenuhnya di latar belakang via HTTP RPC native (`curl-cffi` + `gemini-webapi`). Tidak membutuhkan Chrome, Selenium, atau ekstensi.
 - **Konsumsi Memori Sangat Hemat (~25 MB RAM)**: Berjalan stabil tanpa membebani sistem Anda.
-- **Pemisahan Mode Chat vs Task**:
-  - **Task Mode**: Panggilan mandiri (*stateless*) untuk eksekusi perintah tanpa menyimpan riwayat.
-  - **Chat Mode**: Obrolan multi-turn dengan konteks berkelanjutan menggunakan `session_id`.
+- **Pemisahan Mode Stateless vs Stateful**:
+  - **Stateless Execution (Single-Turn)**: Panggilan mandiri satu kali untuk eksekusi tanpa mencemari riwayat.
+  - **Stateful Chat (Multi-Turn)**: Obrolan bersambung dengan pelacakan konteks deterministik menggunakan `session_id`.
 - **Dukungan Streaming Real-Time (SSE)**: Mendukung parameter `"stream": true` secara native via Server-Sent Events untuk Cursor, Continue.dev, dan AI IDE modern.
 - **Akselerasi Serialisasi orjson**: Kecepatan pemrosesan JSON ultra-cepat dengan fallback otomatis ke library standar `json`.
 - **Manajemen Memori Bounded LRU**: Menggusur sesi terlama secara otomatis bila melampaui 100 sesi aktif (*anti memory leak*).
@@ -213,6 +223,16 @@ In your `config.json` for Continue or Cursor AI:
   - `gemini-pro` (Argon): Penalaran mendalam (*deep reasoning*) dengan dukungan `thinking_level: high`.
   - `gemini-carbon`: Penalaran ekstrem tingkat lanjut (*Most complex work*, aktif jika akun Google Anda memiliki akses Google One AI Premium/Ultra).
   - `gemini-flash-lite`: Respons cepat dan ringkas.
+
+---
+
+### 🧩 Catatan Arsitektur: Perbedaan Mode Task vs. Chat di Ekosistem Gemini
+
+Secara resmi di ekosistem Google Gemini dan AI Agentic (seperti Antigravity):
+- **Mode Task (Sandboxed Execution)**: Sesi eksekusi otonom yang dibekali dengan **Sandbox Komputasi Nyata** (seperti *Python Code Interpreter Sandbox* di Google Cloud, atau *Workspace/Terminal Sandbox* di Antigravity). Pada mode ini, AI tidak hanya mengetik teks, melainkan mengeksekusi kode secara nyata, menguji hasil *output*, dan memanipulasi berkas proyek di lingkungan terisolasi yang aman.
+- **Mode Chat (Conversational Non-Sandbox)**: Sesi percakapan murni di mana model bertukar pengetahuan konseptual tanpa menyentuh sandbox eksekusi kode.
+
+**Gemini Direct RPC Bridge** bertindak sebagai **lapisan transportasi RPC berkecepatan tinggi**. Ketika dipadukan dengan framework agentic lokal (seperti Antigravity atau Cursor), agen memanfaatkan endpoint bridge ini untuk menjalankan **Task Sejati di dalam sandbox komputer Anda** secara otomatis dan gratis!
 
 ---
 
