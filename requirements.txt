@@ -1,0 +1,4 @@
+gemini-webapi>=2.1.1
+curl-cffi>=0.16.3
+pydantic>=2.12.5
+orjson>=3.11.9

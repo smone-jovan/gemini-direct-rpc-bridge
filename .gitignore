@@ -1,0 +1,34 @@
+# Authentication & Secrets
+cookies.json
+.env
+.env.*
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+dist/
+*.egg-info/
+
+# Local Logs & Audit artifacts
+*.log
+*.txt
+!requirements.txt
+audit_*.py
+run_argon_*.py
+test_audit.py
+chrome-extension/
+
+# OS / Editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
