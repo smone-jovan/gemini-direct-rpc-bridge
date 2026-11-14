@@ -28,6 +28,7 @@ Headless, high-performance, ultra-low memory (~25 MB RAM) Direct HTTP RPC Bridge
 - **Extended Thinking & Model Mapping**:
   - `gemini-4-hydrogen` / `fast`: Super-fast everyday tasks.
   - `gemini-pro` / `argon` / `research`: Deep reasoning mode with `thinking_level: high`.
+  - `gemini-carbon`: Extreme-frontier reasoning (Most complex work, available for eligible Google One AI Premium/Ultra accounts).
   - `gemini-flash-lite`: Low-latency quick answers.
 - **Automated Keepalive**: Background session auto-refresh keeps cookies alive continuously.
 - **Flexible Credential Loading**: Supports `cookies.json` or environment variables (`GEMINI_SECURE_1PSID`, `GEMINI_SECURE_1PSIDTS`).
@@ -210,6 +211,7 @@ In your `config.json` for Continue or Cursor AI:
 - **Dukungan Model**:
   - `gemini-4-hydrogen`: Kecepatan tinggi untuk eksekusi tugas harian.
   - `gemini-pro` (Argon): Penalaran mendalam (*deep reasoning*) dengan dukungan `thinking_level: high`.
+  - `gemini-carbon`: Penalaran ekstrem tingkat lanjut (*Most complex work*, aktif jika akun Google Anda memiliki akses Google One AI Premium/Ultra).
   - `gemini-flash-lite`: Respons cepat dan ringkas.
 
 ---

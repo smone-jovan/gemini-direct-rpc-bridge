@@ -291,7 +291,7 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
                     "streaming": True,
                     "orjson_accelerated": "orjson" in sys.modules
                 },
-                "supported_models": ["gemini-4-hydrogen", "gemini-pro", "gemini-flash-lite"],
+                "supported_models": ["gemini-4-hydrogen", "gemini-pro", "gemini-carbon", "gemini-flash-lite"],
                 "endpoint": f"http://{HTTP_HOST}:{HTTP_PORT}/v1/chat/completions"
             }
             await send_json_response(writer, 200, "OK", status_obj, indent=True)
@@ -304,6 +304,7 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
                 "data": [
                     {"id": "gemini-4-hydrogen", "object": "model", "owned_by": "google-deepmind", "description": "Everyday help (Super Fast)"},
                     {"id": "gemini-pro", "object": "model", "owned_by": "google-deepmind", "description": "Detailed research (Argon / Deep Reasoning)"},
+                    {"id": "gemini-carbon", "object": "model", "owned_by": "google-deepmind", "description": "Most complex work (Carbon / Extreme Reasoning)"},
                     {"id": "gemini-flash-lite", "object": "model", "owned_by": "google-deepmind", "description": "Quick answers"}
                 ]
             }
