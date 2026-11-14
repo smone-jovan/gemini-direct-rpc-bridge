@@ -20,6 +20,7 @@ from typing import Optional, Dict, AsyncGenerator
 from collections import OrderedDict
 from gemini_webapi import GeminiClient, ChatSession
 from gemini_webapi.types.modeloutput import ModelOutput
+from gemini_webapi.types.availablemodel import AvailableModel
 
 # Ultra-fast JSON serialization with fallback
 try:
@@ -98,7 +99,28 @@ async def init_client():
         auto_refresh=True
     )
     await gemini_client.init()
-    print("[Bridge] Terhubung sukses ke Google Gemini! (100% Bebas Browser)", flush=True)
+
+    # Registrasi 4 Argon (Code & analysis - Argon4p0 dengan Python Sandbox)
+    argon_model = AvailableModel(
+        model_id="56fdd199312815e2",
+        model_name="gemini-4-argon",
+        display_name="Code & analysis",
+        description="4 Argon",
+        capacity=2,
+        capacity_field=12,
+        model_number=2,
+        is_available=True,
+        aliases=["argon", "4-argon", "code-analysis", "gemini-4-argon", "argon4p0", "code & analysis"]
+    )
+    gemini_client._model_registry["gemini-4-argon"] = argon_model
+    gemini_client._model_registry["argon"] = argon_model
+
+    # Hapus model 3.1 Pro jadul secara total dari sistem
+    gemini_client._model_registry.pop("gemini-pro", None)
+    gemini_client._model_registry.pop("e6fa609c3fa255c0", None)
+    gemini_client._model_registry.pop("pro", None)
+
+    print("[Bridge] Terhubung sukses ke Google Gemini! (100% Bebas Browser | 3.1 Pro Dihapus | 4 Argon Aktif)", flush=True)
 
 
 async def ensure_client() -> GeminiClient:
@@ -115,22 +137,18 @@ async def ensure_client() -> GeminiClient:
 def resolve_target_model(model_name: Optional[str], mode: str = "chat") -> str:
     target = (model_name or "").lower().strip()
     
-    # Mode TASK resmi Google Gemini: Hanya menyediakan 2 model khusus tanpa toggle thinking
-    if mode == "task":
-        if "code" in target or "analysis" in target or "argon" in target or "pro" in target:
-            return "gemini-pro"         # Code & analysis (4 Argon)
-        return "gemini-4-hydrogen"       # Everyday help (4 Hydrogen - Default)
-
-    # Mode CHAT biasa
-    if "hydrogen" in target or "fast" in target or "everyday" in target:
-        return "gemini-4-hydrogen"
-    elif "argon" in target or "code" in target or "analysis" in target or "pro" in target or "research" in target:
-        return "gemini-pro"
-    elif "carbon" in target:
+    # HIERARKI MUTLAK: Carbon > Argon > Hydrogen > Flash-Lite (3.1 Pro DIBUANG TOTAL!)
+    if "carbon" in target:
         return "gemini-carbon"
-    elif "flash" in target:
+    elif "argon" in target or "code" in target or "analysis" in target:
+        return "gemini-4-argon"
+    elif "hydrogen" in target or "everyday" in target or "fast" in target:
+        return "gemini-4-hydrogen"
+    elif "flash" in target or "lite" in target or "quick" in target:
         return "gemini-flash-lite"
-    return "gemini-pro"
+    
+    # Default aman: jika mode task -> 4 Hydrogen / 4 Argon. Default general: 4 Hydrogen
+    return "gemini-4-hydrogen"
 
 
 def extract_text_from_content(content) -> str:
@@ -310,10 +328,9 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
                     "orjson_accelerated": "orjson" in sys.modules
                 },
                 "supported_models": [
-                    "gemini-4-hydrogen", 
+                    "gemini-carbon",
                     "gemini-4-argon", 
-                    "gemini-pro", 
-                    "gemini-carbon", 
+                    "gemini-4-hydrogen", 
                     "gemini-flash-lite"
                 ],
                 "endpoint": f"http://{HTTP_HOST}:{HTTP_PORT}/v1/chat/completions"
@@ -326,10 +343,9 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
             models_obj = {
                 "object": "list",
                 "data": [
-                    {"id": "gemini-4-hydrogen", "object": "model", "owned_by": "google-deepmind", "description": "Everyday help (4 Hydrogen)", "modes": ["chat", "task"]},
-                    {"id": "gemini-4-argon", "object": "model", "owned_by": "google-deepmind", "description": "Code & analysis (4 Argon)", "modes": ["chat", "task"]},
-                    {"id": "gemini-pro", "object": "model", "owned_by": "google-deepmind", "description": "Detailed research (3.1 Pro)", "modes": ["chat"]},
                     {"id": "gemini-carbon", "object": "model", "owned_by": "google-deepmind", "description": "Most complex work (4 Carbon - Restricted)", "modes": ["chat"]},
+                    {"id": "gemini-4-argon", "object": "model", "owned_by": "google-deepmind", "description": "Code & analysis (4 Argon)", "modes": ["chat", "task"]},
+                    {"id": "gemini-4-hydrogen", "object": "model", "owned_by": "google-deepmind", "description": "Everyday help (4 Hydrogen)", "modes": ["chat", "task"]},
                     {"id": "gemini-flash-lite", "object": "model", "owned_by": "google-deepmind", "description": "Quick answers (3.5 Flash-Lite)", "modes": ["chat"]}
                 ]
             }

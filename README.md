@@ -208,7 +208,7 @@ In your `config.json` for Continue or Cursor AI:
     {
       "title": "Gemini 4 Argon (Local Bridge)",
       "provider": "openai",
-      "model": "gemini-pro",
+      "model": "gemini-4-argon",
       "apiBase": "http://127.0.0.1:8765/v1",
       "apiKey": "local"
     }
@@ -253,7 +253,7 @@ Di antarmuka resmi Google Gemini, terdapat tombol fisik pemilih: **`[ Chat | Tas
 
 1. **Mode `Chat`**:
    - Mode percakapan umum.
-   - Pilihan model lengkap (`gemini-4-hydrogen`, `gemini-pro`, `gemini-carbon`, `gemini-flash-lite`).
+   - Pilihan model mutakhir sesuai hierarki: **Carbon > Argon > Hydrogen > Flash-Lite** (`gemini-carbon`, `gemini-4-argon`, `gemini-4-hydrogen`, `gemini-flash-lite`). Model lama 3.1 Pro telah dihapus.
    - Menyediakan setelan manual **Thinking Level** (`thinking_level: "high"` / `"low"`).
 2. **Mode `Task`** (*Mengaktifkan input `+ Describe task` / "Tag me in! What's next?"*):
    - Pipeline agen otonom khusus.
