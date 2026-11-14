@@ -402,17 +402,17 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
                 session_id = req_json.get("session_id") or req_json.get("conversation_id")
                 is_stream = bool(req_json.get("stream", False))
 
-                # AUTO-SESSION CONTINUATION:
-                # Jika klien OpenAI mengirim riwayat pesan (messages > 1) tanpa session_id,
-                # otomatis turunkan session_id persisten dari pesan pertama (root fingerprint)!
-                if not session_id and len(messages) > 1:
-                    first_user_text = ""
-                    for m in messages:
-                        if m.get("role") == "user":
-                            first_user_text = extract_text_from_content(m.get("content", ""))
-                            break
-                    if first_user_text:
-                        session_id = f"auto-{hashlib.md5(first_user_text.strip().encode('utf-8')).hexdigest()[:12]}"
+                # AUTO-SESSION CONTINUATION (Optimized per Gemini 4 Argon Audit):
+                # 1. Turunkan session_id sejak turn pertama menggunakan seed (system + first user)
+                if not session_id:
+                    seed_parts = [
+                        f"{m.get('role')}:{extract_text_from_content(m.get('content', '')).strip()}"
+                        for m in messages
+                        if m.get("role") in ("system", "user")
+                    ][:2]
+                    if seed_parts:
+                        raw_seed = "|".join(seed_parts).encode("utf-8")
+                        session_id = f"auto-{hashlib.sha256(raw_seed).hexdigest()[:16]}"
 
                 # Check thinking level
                 thinking_level = req_json.get("thinking_level") or req_json.get("reasoning_effort")
@@ -421,10 +421,10 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
                     str(thinking_level).lower() in ["high", "extended", "tinggi", "true", "1"]
                 )
 
-                # Ekstraksi prompt:
-                # Jika sesi bersambung (session_id aktif), kirim HANYA pesan user paling akhir!
-                # Objek ChatSession Google mengelola riwayat dan ID percakapan di server.
-                if session_id:
+                # Ekstraksi prompt (Optimized per Gemini 4 Argon Audit):
+                # Hanya kirim pesan user paling akhir JIKA sesi sudah aktif di memori bridge!
+                # Jika turn pertama atau sesi belum terinisialisasi di LRU, kirim full context untuk bootstrapping thread.
+                if session_id and session_id in active_sessions:
                     prompt = extract_text_from_content(messages[-1].get("content", ""))
                 elif len(messages) == 1:
                     prompt = extract_text_from_content(messages[0].get("content", ""))
