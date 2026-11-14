@@ -100,7 +100,7 @@ async def init_client():
     )
     await gemini_client.init()
 
-    # Registrasi 4 Argon (Code & analysis - Argon4p0 dengan Python Sandbox)
+    # Registrasi 4 Argon (Code & analysis - Argon4p0 dengan model_number: 8 dari body[24])
     argon_model = AvailableModel(
         model_id="56fdd199312815e2",
         model_name="gemini-4-argon",
@@ -108,7 +108,7 @@ async def init_client():
         description="4 Argon",
         capacity=2,
         capacity_field=12,
-        model_number=2,
+        model_number=8,
         is_available=True,
         aliases=["argon", "4-argon", "code-analysis", "gemini-4-argon", "argon4p0", "code & analysis"]
     )
@@ -120,7 +120,7 @@ async def init_client():
     gemini_client._model_registry.pop("e6fa609c3fa255c0", None)
     gemini_client._model_registry.pop("pro", None)
 
-    print("[Bridge] Terhubung sukses ke Google Gemini! (100% Bebas Browser | 3.1 Pro Dihapus | 4 Argon Aktif)", flush=True)
+    print("[Bridge] Terhubung sukses ke Google Gemini! (100% Bebas Browser | 3.1 Pro Dihapus | 4 Argon Aktif Model# 8)", flush=True)
 
 
 async def ensure_client() -> GeminiClient:
@@ -134,21 +134,37 @@ async def ensure_client() -> GeminiClient:
     return gemini_client
 
 
-def resolve_target_model(model_name: Optional[str], mode: str = "chat") -> str:
-    target = (model_name or "").lower().strip()
+def resolve_target_model(model_name: Optional[str], mode: str = "chat") -> tuple[str, str]:
+    raw = (model_name or "").lower().strip()
     
-    # HIERARKI MUTLAK: Carbon > Argon > Hydrogen > Flash-Lite (3.1 Pro DIBUANG TOTAL!)
+    # Auto-detect mode from model suffix e.g. "gemini-4-argon:task" or "argon:chat"
+    if ":task" in raw:
+        mode = "task"
+        raw = raw.replace(":task", "").strip()
+    elif ":chat" in raw:
+        mode = "chat"
+        raw = raw.replace(":chat", "").strip()
+        
+    target = raw
+
+    # MODE TASK (Resmi Google: Eksklusif hanya 2 Model - 4 Argon & 4 Hydrogen)
+    if mode == "task":
+        if any(k in target for k in ["argon", "code", "analysis", "dev", "prog"]):
+            return "gemini-4-argon", "task"
+        return "gemini-4-hydrogen", "task"
+
+    # MODE CHAT: HIERARKI MUTLAK: Carbon > Argon > Hydrogen > Flash-Lite (3.1 Pro DIBUANG TOTAL!)
     if "carbon" in target:
-        return "gemini-carbon"
-    elif "argon" in target or "code" in target or "analysis" in target:
-        return "gemini-4-argon"
-    elif "hydrogen" in target or "everyday" in target or "fast" in target:
-        return "gemini-4-hydrogen"
-    elif "flash" in target or "lite" in target or "quick" in target:
-        return "gemini-flash-lite"
-    
-    # Default aman: jika mode task -> 4 Hydrogen / 4 Argon. Default general: 4 Hydrogen
-    return "gemini-4-hydrogen"
+        return "gemini-carbon", "chat"
+    elif any(k in target for k in ["argon", "code", "analysis"]):
+        return "gemini-4-argon", "chat"
+    elif any(k in target for k in ["hydrogen", "everyday", "fast"]):
+        return "gemini-4-hydrogen", "chat"
+    elif any(k in target for k in ["flash", "lite", "quick"]):
+        return "gemini-flash-lite", "chat"
+
+    # Default umum: 4 Hydrogen
+    return "gemini-4-hydrogen", "chat"
 
 
 def extract_text_from_content(content) -> str:
@@ -184,16 +200,16 @@ async def get_or_create_session(session_id: str, target_model: str) -> ChatSessi
 
 async def ask_gemini(
     prompt: str,
-    model: str = "gemini-pro",
+    model: str = "gemini-4-hydrogen",
     session_id: Optional[str] = None,
     extended_thinking: bool = False,
     mode: str = "chat"
 ) -> str:
     client = await ensure_client()
-    target_model = resolve_target_model(model, mode=mode)
+    target_model, effective_mode = resolve_target_model(model, mode=mode)
     # Di mode TASK resmi Google, thinking toggle ditiadakan (penalaran agentic otomatis di backend)
-    actual_thinking = False if mode == "task" else extended_thinking
-    print(f"[Bridge] Mode: {mode.upper()} | Model: '{target_model}' (Session: {session_id or 'Single-turn'}, Thinking: {actual_thinking})...", flush=True)
+    actual_thinking = False if effective_mode == "task" else extended_thinking
+    print(f"[Bridge] Mode: {effective_mode.upper()} | Model: '{target_model}' (Session: {session_id or 'Single-turn'}, Thinking: {actual_thinking})...", flush=True)
 
     if session_id:
         chat = await get_or_create_session(session_id, target_model)
@@ -210,15 +226,15 @@ async def ask_gemini(
 
 async def ask_gemini_stream(
     prompt: str,
-    model: str = "gemini-pro",
+    model: str = "gemini-4-hydrogen",
     session_id: Optional[str] = None,
     extended_thinking: bool = False,
     mode: str = "chat"
 ) -> AsyncGenerator[ModelOutput, None]:
     client = await ensure_client()
-    target_model = resolve_target_model(model, mode=mode)
-    actual_thinking = False if mode == "task" else extended_thinking
-    print(f"[Bridge] Mode: {mode.upper()} (Stream) | Model: '{target_model}' (Session: {session_id or 'Single-turn'}, Thinking: {actual_thinking})...", flush=True)
+    target_model, effective_mode = resolve_target_model(model, mode=mode)
+    actual_thinking = False if effective_mode == "task" else extended_thinking
+    print(f"[Bridge] Mode: {effective_mode.upper()} (Stream) | Model: '{target_model}' (Session: {session_id or 'Single-turn'}, Thinking: {actual_thinking})...", flush=True)
 
     if session_id:
         chat = await get_or_create_session(session_id, target_model)
@@ -372,7 +388,7 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
                     await close_writer(writer)
                     return
 
-                model = req_json.get("model", "gemini-pro")
+                model = req_json.get("model", "gemini-4-hydrogen")
                 mode = str(req_json.get("mode", "chat")).lower().strip()
                 if mode not in ["task", "chat"]:
                     mode = "chat"
@@ -408,7 +424,7 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
                     await close_writer(writer)
                     return
 
-                resolved_model = resolve_target_model(model, mode=mode)
+                resolved_model, effective_mode = resolve_target_model(model, mode=mode)
                 completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
                 created_ts = int(time.time())
 
@@ -440,10 +456,10 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
 
                     async for chunk in ask_gemini_stream(
                         prompt,
-                        model=model,
+                        model=resolved_model,
                         session_id=session_id,
                         extended_thinking=extended_thinking,
-                        mode=mode
+                        mode=effective_mode
                     ):
                         delta = chunk.text_delta
                         if delta:
@@ -480,10 +496,10 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
                 # Non-streaming response
                 resp_text = await ask_gemini(
                     prompt,
-                    model=model,
+                    model=resolved_model,
                     session_id=session_id,
                     extended_thinking=extended_thinking,
-                    mode=mode
+                    mode=effective_mode
                 )
 
                 openai_resp = {
@@ -491,6 +507,7 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
                     "object": "chat.completion",
                     "created": created_ts,
                     "model": resolved_model,
+                    "mode": effective_mode,
                     "session_id": session_id,
                     "choices": [
                         {

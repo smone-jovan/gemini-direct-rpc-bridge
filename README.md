@@ -158,36 +158,48 @@ curl -X POST http://127.0.0.1:8765/v1/chat/completions \
 ```
 
 #### 3. Mode 3: Stateless Task (Code & Analysis with 4 Argon)
+You can specify mode via `"mode": "task"` or directly in the model name suffix `"model": "gemini-4-argon:task"`:
 ```bash
+# Using model suffix (IDE / Cursor friendly)
 curl -X POST http://127.0.0.1:8765/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "mode": "task",
-    "model": "argon",
+    "model": "gemini-4-argon:task",
     "messages": [
       {"role": "user", "content": "Analyze dual-pivot quicksort worst-case complexity and provide a C99 implementation."}
     ]
   }'
+
+# Or using explicit mode parameter
+curl -X POST http://127.0.0.1:8765/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "mode": "task",
+    "model": "gemini-4-hydrogen",
+    "messages": [
+      {"role": "user", "content": "Summarize the key requirements for PCI-DSS compliance."}
+    ]
+  }'
 ```
 
-#### 4. Mode 4: Stateful Task (Multi-Turn Pipeline with 4 Argon)
+#### 4. Mode 4: Stateful Task (Multi-Turn Pipeline with Memory Retention)
 ```bash
 # Step 1
 curl -X POST http://127.0.0.1:8765/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "mode": "task",
-    "model": "argon",
+    "model": "gemini-4-hydrogen",
     "session_id": "task-pipeline-1",
     "messages": [{"role": "user", "content": "Define the JSON schema for a payment webhook."}]
   }'
 
-# Step 2
+# Step 2 (Prior decisions and schemas are retained!)
 curl -X POST http://127.0.0.1:8765/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "mode": "task",
-    "model": "argon",
+    "model": "gemini-4-hydrogen",
     "session_id": "task-pipeline-1",
     "messages": [{"role": "user", "content": "Write unit tests covering that exact schema."}]
   }'
