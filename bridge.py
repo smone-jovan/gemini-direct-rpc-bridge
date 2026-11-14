@@ -112,11 +112,19 @@ async def ensure_client() -> GeminiClient:
     return gemini_client
 
 
-def resolve_target_model(model_name: Optional[str]) -> str:
-    target = (model_name or "gemini-pro").lower().strip()
-    if "hydrogen" in target or "fast" in target:
+def resolve_target_model(model_name: Optional[str], mode: str = "chat") -> str:
+    target = (model_name or "").lower().strip()
+    
+    # Mode TASK resmi Google Gemini: Hanya menyediakan 2 model khusus tanpa toggle thinking
+    if mode == "task":
+        if "code" in target or "analysis" in target or "argon" in target or "pro" in target:
+            return "gemini-pro"         # Code & analysis (4 Argon)
+        return "gemini-4-hydrogen"       # Everyday help (4 Hydrogen - Default)
+
+    # Mode CHAT biasa
+    if "hydrogen" in target or "fast" in target or "everyday" in target:
         return "gemini-4-hydrogen"
-    elif "argon" in target or "pro" in target or "research" in target:
+    elif "argon" in target or "code" in target or "analysis" in target or "pro" in target or "research" in target:
         return "gemini-pro"
     elif "carbon" in target:
         return "gemini-carbon"
@@ -160,21 +168,24 @@ async def ask_gemini(
     prompt: str,
     model: str = "gemini-pro",
     session_id: Optional[str] = None,
-    extended_thinking: bool = False
+    extended_thinking: bool = False,
+    mode: str = "chat"
 ) -> str:
     client = await ensure_client()
-    target_model = resolve_target_model(model)
-    print(f"[Bridge] Mengirim prompt ke '{target_model}' (Session: {session_id or 'Stateless Execution'}, Thinking: {extended_thinking})...", flush=True)
+    target_model = resolve_target_model(model, mode=mode)
+    # Di mode TASK resmi Google, thinking toggle ditiadakan (penalaran agentic otomatis di backend)
+    actual_thinking = False if mode == "task" else extended_thinking
+    print(f"[Bridge] Mode: {mode.upper()} | Model: '{target_model}' (Session: {session_id or 'Single-turn'}, Thinking: {actual_thinking})...", flush=True)
 
     if session_id:
         chat = await get_or_create_session(session_id, target_model)
-        response = await chat.send_message(prompt, extended_thinking=extended_thinking)
+        response = await chat.send_message(prompt, extended_thinking=actual_thinking)
         return response.text
 
     response = await client.generate_content(
         prompt,
         model=target_model,
-        extended_thinking=extended_thinking
+        extended_thinking=actual_thinking
     )
     return response.text
 
@@ -183,21 +194,23 @@ async def ask_gemini_stream(
     prompt: str,
     model: str = "gemini-pro",
     session_id: Optional[str] = None,
-    extended_thinking: bool = False
+    extended_thinking: bool = False,
+    mode: str = "chat"
 ) -> AsyncGenerator[ModelOutput, None]:
     client = await ensure_client()
-    target_model = resolve_target_model(model)
-    print(f"[Bridge] Mengirim prompt streaming ke '{target_model}' (Session: {session_id or 'Stateless/Task'}, Thinking: {extended_thinking})...", flush=True)
+    target_model = resolve_target_model(model, mode=mode)
+    actual_thinking = False if mode == "task" else extended_thinking
+    print(f"[Bridge] Mode: {mode.upper()} (Stream) | Model: '{target_model}' (Session: {session_id or 'Single-turn'}, Thinking: {actual_thinking})...", flush=True)
 
     if session_id:
         chat = await get_or_create_session(session_id, target_model)
-        async for chunk in chat.send_message_stream(prompt, extended_thinking=extended_thinking):
+        async for chunk in chat.send_message_stream(prompt, extended_thinking=actual_thinking):
             yield chunk
     else:
         async for chunk in client.generate_content_stream(
             prompt,
             model=target_model,
-            extended_thinking=extended_thinking
+            extended_thinking=actual_thinking
         ):
             yield chunk
 
@@ -283,15 +296,26 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
                 "status": "online",
                 "mode": "Direct HTTP RPC (Metode 2 - Tanpa Browser)",
                 "client_initialized": gemini_client is not None,
+                "gemini_ui_modes": ["chat", "task"],
+                "task_models": [
+                    "Everyday help (4 Hydrogen)",
+                    "Code & analysis (4 Argon)"
+                ],
                 "active_sessions": list(active_sessions.keys()),
                 "capabilities": {
-                    "extended_thinking": True,
-                    "stateless_and_stateful": True,
+                    "task_mode": "Only 2 models (4 Hydrogen & 4 Argon) without manual thinking toggle",
+                    "chat_mode": "Full conversational models with optional thinking toggles",
                     "session_isolation": True,
                     "streaming": True,
                     "orjson_accelerated": "orjson" in sys.modules
                 },
-                "supported_models": ["gemini-4-hydrogen", "gemini-pro", "gemini-carbon", "gemini-flash-lite"],
+                "supported_models": [
+                    "gemini-4-hydrogen", 
+                    "gemini-4-argon", 
+                    "gemini-pro", 
+                    "gemini-carbon", 
+                    "gemini-flash-lite"
+                ],
                 "endpoint": f"http://{HTTP_HOST}:{HTTP_PORT}/v1/chat/completions"
             }
             await send_json_response(writer, 200, "OK", status_obj, indent=True)
@@ -302,10 +326,11 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
             models_obj = {
                 "object": "list",
                 "data": [
-                    {"id": "gemini-4-hydrogen", "object": "model", "owned_by": "google-deepmind", "description": "Everyday help (Super Fast)"},
-                    {"id": "gemini-pro", "object": "model", "owned_by": "google-deepmind", "description": "Detailed research (Argon / Deep Reasoning)"},
-                    {"id": "gemini-carbon", "object": "model", "owned_by": "google-deepmind", "description": "Most complex work (Carbon / Extreme Reasoning)"},
-                    {"id": "gemini-flash-lite", "object": "model", "owned_by": "google-deepmind", "description": "Quick answers"}
+                    {"id": "gemini-4-hydrogen", "object": "model", "owned_by": "google-deepmind", "description": "Everyday help (4 Hydrogen)", "modes": ["chat", "task"]},
+                    {"id": "gemini-4-argon", "object": "model", "owned_by": "google-deepmind", "description": "Code & analysis (4 Argon)", "modes": ["chat", "task"]},
+                    {"id": "gemini-pro", "object": "model", "owned_by": "google-deepmind", "description": "Detailed research (3.1 Pro)", "modes": ["chat"]},
+                    {"id": "gemini-carbon", "object": "model", "owned_by": "google-deepmind", "description": "Most complex work (4 Carbon - Restricted)", "modes": ["chat"]},
+                    {"id": "gemini-flash-lite", "object": "model", "owned_by": "google-deepmind", "description": "Quick answers (3.5 Flash-Lite)", "modes": ["chat"]}
                 ]
             }
             await send_json_response(writer, 200, "OK", models_obj)
@@ -332,6 +357,9 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
                     return
 
                 model = req_json.get("model", "gemini-pro")
+                mode = str(req_json.get("mode", "chat")).lower().strip()
+                if mode not in ["task", "chat"]:
+                    mode = "chat"
                 session_id = req_json.get("session_id")
                 is_stream = bool(req_json.get("stream", False))
 
@@ -364,7 +392,7 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
                     await close_writer(writer)
                     return
 
-                resolved_model = resolve_target_model(model)
+                resolved_model = resolve_target_model(model, mode=mode)
                 completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
                 created_ts = int(time.time())
 
@@ -398,7 +426,8 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
                         prompt,
                         model=model,
                         session_id=session_id,
-                        extended_thinking=extended_thinking
+                        extended_thinking=extended_thinking,
+                        mode=mode
                     ):
                         delta = chunk.text_delta
                         if delta:
@@ -437,7 +466,8 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
                     prompt,
                     model=model,
                     session_id=session_id,
-                    extended_thinking=extended_thinking
+                    extended_thinking=extended_thinking,
+                    mode=mode
                 )
 
                 openai_resp = {
