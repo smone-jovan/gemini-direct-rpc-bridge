@@ -16,6 +16,7 @@ import os
 import sys
 import uuid
 import json
+import hashlib
 from typing import Optional, Dict, AsyncGenerator
 from collections import OrderedDict
 from gemini_webapi import GeminiClient, ChatSession
@@ -193,7 +194,9 @@ async def get_or_create_session(session_id: str, target_model: str) -> ChatSessi
             if len(active_sessions) >= MAX_SESSIONS:
                 evicted_id, _ = active_sessions.popitem(last=False)
                 print(f"[Bridge] Menggusur sesi tidak aktif (LRU): {evicted_id}", flush=True)
-            chat = client.start_chat(model=target_model)
+            # Jika session_id adalah Google CID asli (c_...), lampirkan langsung ke thread tersebut!
+            cid_param = session_id if session_id.startswith("c_") else ""
+            chat = client.start_chat(model=target_model, cid=cid_param)
             active_sessions[session_id] = chat
         return chat
 
@@ -396,8 +399,20 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
                 mode = str(req_json.get("mode", "chat")).lower().strip()
                 if mode not in ["task", "chat"]:
                     mode = "chat"
-                session_id = req_json.get("session_id")
+                session_id = req_json.get("session_id") or req_json.get("conversation_id")
                 is_stream = bool(req_json.get("stream", False))
+
+                # AUTO-SESSION CONTINUATION:
+                # Jika klien OpenAI mengirim riwayat pesan (messages > 1) tanpa session_id,
+                # otomatis turunkan session_id persisten dari pesan pertama (root fingerprint)!
+                if not session_id and len(messages) > 1:
+                    first_user_text = ""
+                    for m in messages:
+                        if m.get("role") == "user":
+                            first_user_text = extract_text_from_content(m.get("content", ""))
+                            break
+                    if first_user_text:
+                        session_id = f"auto-{hashlib.md5(first_user_text.strip().encode('utf-8')).hexdigest()[:12]}"
 
                 # Check thinking level
                 thinking_level = req_json.get("thinking_level") or req_json.get("reasoning_effort")
@@ -406,7 +421,12 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
                     str(thinking_level).lower() in ["high", "extended", "tinggi", "true", "1"]
                 )
 
-                if len(messages) == 1:
+                # Ekstraksi prompt:
+                # Jika sesi bersambung (session_id aktif), kirim HANYA pesan user paling akhir!
+                # Objek ChatSession Google mengelola riwayat dan ID percakapan di server.
+                if session_id:
+                    prompt = extract_text_from_content(messages[-1].get("content", ""))
+                elif len(messages) == 1:
                     prompt = extract_text_from_content(messages[0].get("content", ""))
                 else:
                     parts = []
@@ -513,6 +533,7 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
                     "model": resolved_model,
                     "mode": effective_mode,
                     "session_id": session_id,
+                    "conversation_id": (active_sessions[session_id].cid if session_id and session_id in active_sessions else None),
                     "choices": [
                         {
                             "index": 0,
