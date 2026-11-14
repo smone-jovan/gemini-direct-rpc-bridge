@@ -18,6 +18,8 @@ Headless, high-performance, ultra-low memory (~25 MB RAM) Direct HTTP RPC Bridge
 - **100% Browserless & Headless**: Direct HTTP RPC via `gemini-webapi` and `curl-cffi`. No Chrome, Puppeteer, Selenium, or Xvfb needed.
 - **Ultra-Low Memory Footprint**: Runs at **~25 MB of RAM** idle/active (compared to 600 MB–1.5 GB for browser automation).
 - **OpenAI Compatible**: Seamless drop-in replacement exposing `/v1/chat/completions`, `/v1/models`, and `/health`. Works out-of-the-box with Cursor, Continue, Cline, and OpenAI SDKs.
+- **Real-Time SSE Streaming**: Native Server-Sent Events (`stream: true`) support delivers low-latency chunked streaming directly to modern AI coding assistants.
+- **High-Performance JSON Engine**: Accelerated by `orjson` with automatic fallback to standard library `json`.
 - **Multi-Session Isolation**:
   - **Task Mode (Stateless)**: One-off prompts execute without polluting conversational history.
   - **Chat Mode (Stateful)**: Multi-turn conversations track context deterministically when `session_id` is passed.
@@ -201,6 +203,8 @@ In your `config.json` for Continue or Cursor AI:
 - **Pemisahan Mode Chat vs Task**:
   - **Task Mode**: Panggilan mandiri (*stateless*) untuk eksekusi perintah tanpa menyimpan riwayat.
   - **Chat Mode**: Obrolan multi-turn dengan konteks berkelanjutan menggunakan `session_id`.
+- **Dukungan Streaming Real-Time (SSE)**: Mendukung parameter `"stream": true` secara native via Server-Sent Events untuk Cursor, Continue.dev, dan AI IDE modern.
+- **Akselerasi Serialisasi orjson**: Kecepatan pemrosesan JSON ultra-cepat dengan fallback otomatis ke library standar `json`.
 - **Manajemen Memori Bounded LRU**: Menggusur sesi terlama secara otomatis bila melampaui 100 sesi aktif (*anti memory leak*).
 - **Proteksi Concurrency Cold-Start**: Dilengkapi `asyncio.Lock` agar terhindar dari *race condition* autentikasi saat request masuk serempak.
 - **Dukungan Model**:

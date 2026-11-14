@@ -5,18 +5,44 @@ Supports:
 - Multi-Session Isolation (Chat vs Task via session_id)
 - Extended Thinking Toggle (thinking_level: high/low or extended_thinking: true/false)
 - Native Model Selection: gemini-4-hydrogen, gemini-pro (Argon), gemini-flash-lite
+- Server-Sent Events (SSE) Real-Time Streaming (stream: true)
+- High-Performance orjson serialization with fallback
 - OpenAI-compatible API at http://127.0.0.1:8765/v1
 """
 
 import asyncio
-import json
 import time
 import os
 import sys
 import uuid
-from typing import Optional, Dict
+import json
+from typing import Optional, Dict, AsyncGenerator
 from collections import OrderedDict
 from gemini_webapi import GeminiClient, ChatSession
+from gemini_webapi.types.modeloutput import ModelOutput
+
+# Ultra-fast JSON serialization with fallback
+try:
+    import orjson
+
+    def json_dumps(obj, indent: bool = False) -> bytes:
+        if indent:
+            return orjson.dumps(obj, option=orjson.OPT_INDENT_2)
+        return orjson.dumps(obj)
+
+    def json_loads(data):
+        return orjson.loads(data)
+except ImportError:
+    def json_dumps(obj, indent: bool = False) -> bytes:
+        if indent:
+            return json.dumps(obj, indent=2).encode("utf-8")
+        return json.dumps(obj).encode("utf-8")
+
+    def json_loads(data):
+        if isinstance(data, (bytes, bytearray)):
+            return json.loads(data.decode("utf-8"))
+        return json.loads(data)
+
 
 HTTP_HOST = "127.0.0.1"
 HTTP_PORT = 8765
@@ -24,12 +50,20 @@ MAX_SESSIONS = 100
 MAX_BODY_BYTES = 2 * 1024 * 1024  # Maksimum payload 2 MB (OOM Protection)
 READ_TIMEOUT = 10.0               # Timeout pembacaan socket (Slowloris Protection)
 
+CORS_HEADERS = (
+    "Access-Control-Allow-Origin: *\r\n"
+    "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
+    "Access-Control-Allow-Headers: Content-Type, Authorization\r\n"
+)
+
 COOKIE_FILE = os.path.join(os.path.dirname(__file__), "cookies.json")
 gemini_client: Optional[GeminiClient] = None
 active_sessions: OrderedDict[str, ChatSession] = OrderedDict()
 init_lock = asyncio.Lock()
+session_lock = asyncio.Lock()
 
-def load_cookies():
+
+def load_cookies() -> dict:
     data = {}
     if os.path.exists(COOKIE_FILE):
         try:
@@ -46,6 +80,7 @@ def load_cookies():
                 data["__Secure-1PSIDTS"] = env_psidts
     return data
 
+
 async def init_client():
     global gemini_client
     cookies = load_cookies()
@@ -53,7 +88,7 @@ async def init_client():
     psidts = cookies.get("__Secure-1PSIDTS")
 
     if not psid:
-        print("[Bridge Error] Cookies not found in cookies.json!", flush=True)
+        print("[Bridge Error] Cookies not found in cookies.json or GEMINI_SECURE_1PSID env var!", flush=True)
         return
 
     print("[Bridge] Menginisialisasi GeminiClient via HTTP RPC...", flush=True)
@@ -65,8 +100,20 @@ async def init_client():
     await gemini_client.init()
     print("[Bridge] Terhubung sukses ke Google Gemini! (100% Bebas Browser)", flush=True)
 
-def resolve_target_model(model_name: str) -> str:
-    target = model_name.lower().strip()
+
+async def ensure_client() -> GeminiClient:
+    global gemini_client
+    if not gemini_client:
+        async with init_lock:
+            if not gemini_client:
+                await init_client()
+    if not gemini_client:
+        raise RuntimeError("Gagal menginisialisasi GeminiClient. Periksa cookies.json atau environment variables.")
+    return gemini_client
+
+
+def resolve_target_model(model_name: Optional[str]) -> str:
+    target = (model_name or "gemini-pro").lower().strip()
     if "hydrogen" in target or "fast" in target:
         return "gemini-4-hydrogen"
     elif "argon" in target or "pro" in target or "research" in target:
@@ -77,44 +124,109 @@ def resolve_target_model(model_name: str) -> str:
         return "gemini-flash-lite"
     return "gemini-pro"
 
-async def ask_gemini(
-    prompt: str, 
-    model: str = "gemini-pro", 
-    session_id: Optional[str] = None, 
-    extended_thinking: bool = False
-) -> str:
-    global gemini_client, active_sessions
-    if not gemini_client:
-        async with init_lock:
-            if not gemini_client:
-                await init_client()
-    if not gemini_client:
-        raise RuntimeError("Gagal menginisialisasi GeminiClient. Periksa cookies.json.")
 
-    target_model = resolve_target_model(model)
-    print(f"[Bridge] Mengirim prompt ke '{target_model}' (Session: {session_id or 'Stateless/Task'}, Thinking: {extended_thinking})...", flush=True)
+def extract_text_from_content(content) -> str:
+    if isinstance(content, str):
+        return content
+    elif isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict) and item.get("type") == "text":
+                parts.append(item.get("text", ""))
+        return "\n".join(parts)
+    return str(content) if content is not None else ""
 
-    # Mode Chat Berkelanjutan (LRU Eviction Policy)
-    if session_id:
+
+async def get_or_create_session(session_id: str, target_model: str) -> ChatSession:
+    client = await ensure_client()
+    async with session_lock:
         if session_id in active_sessions:
             active_sessions.move_to_end(session_id)
+            chat = active_sessions[session_id]
+            if target_model and chat.model != target_model:
+                chat.model = target_model
         else:
             if len(active_sessions) >= MAX_SESSIONS:
                 evicted_id, _ = active_sessions.popitem(last=False)
                 print(f"[Bridge] Menggusur sesi tidak aktif (LRU): {evicted_id}", flush=True)
-            active_sessions[session_id] = gemini_client.start_chat(model=target_model)
-        
-        chat = active_sessions[session_id]
-        response = await chat.send_message(prompt)
+            chat = client.start_chat(model=target_model)
+            active_sessions[session_id] = chat
+        return chat
+
+
+async def ask_gemini(
+    prompt: str,
+    model: str = "gemini-pro",
+    session_id: Optional[str] = None,
+    extended_thinking: bool = False
+) -> str:
+    client = await ensure_client()
+    target_model = resolve_target_model(model)
+    print(f"[Bridge] Mengirim prompt ke '{target_model}' (Session: {session_id or 'Stateless/Task'}, Thinking: {extended_thinking})...", flush=True)
+
+    if session_id:
+        chat = await get_or_create_session(session_id, target_model)
+        response = await chat.send_message(prompt, extended_thinking=extended_thinking)
         return response.text
 
-    # Mode Task Mandiri / Stateless
-    response = await gemini_client.generate_content(
-        prompt, 
-        model=target_model, 
+    response = await client.generate_content(
+        prompt,
+        model=target_model,
         extended_thinking=extended_thinking
     )
     return response.text
+
+
+async def ask_gemini_stream(
+    prompt: str,
+    model: str = "gemini-pro",
+    session_id: Optional[str] = None,
+    extended_thinking: bool = False
+) -> AsyncGenerator[ModelOutput, None]:
+    client = await ensure_client()
+    target_model = resolve_target_model(model)
+    print(f"[Bridge] Mengirim prompt streaming ke '{target_model}' (Session: {session_id or 'Stateless/Task'}, Thinking: {extended_thinking})...", flush=True)
+
+    if session_id:
+        chat = await get_or_create_session(session_id, target_model)
+        async for chunk in chat.send_message_stream(prompt, extended_thinking=extended_thinking):
+            yield chunk
+    else:
+        async for chunk in client.generate_content_stream(
+            prompt,
+            model=target_model,
+            extended_thinking=extended_thinking
+        ):
+            yield chunk
+
+
+async def close_writer(writer: asyncio.StreamWriter):
+    try:
+        writer.close()
+        await writer.wait_closed()
+    except Exception:
+        pass
+
+
+async def send_json_response(
+    writer: asyncio.StreamWriter,
+    status_code: int,
+    status_text: str,
+    data: dict,
+    indent: bool = False
+):
+    res_bytes = json_dumps(data, indent=indent)
+    response = (
+        f"HTTP/1.1 {status_code} {status_text}\r\n"
+        f"Content-Type: application/json; charset=utf-8\r\n"
+        f"Content-Length: {len(res_bytes)}\r\n"
+        f"{CORS_HEADERS}\r\n"
+    ).encode("utf-8") + res_bytes
+    writer.write(response)
+    await writer.drain()
+
 
 async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
     try:
@@ -126,47 +238,47 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
             header_lines.append(line.decode("utf-8", errors="replace"))
 
         if not header_lines:
-            writer.close()
+            await close_writer(writer)
             return
 
         request_line = header_lines[0].strip().split()
         if len(request_line) < 2:
-            writer.close()
+            await close_writer(writer)
             return
 
-        method, path = request_line[0], request_line[1]
+        method, raw_path = request_line[0].upper(), request_line[1]
+        clean_path = raw_path.split("?")[0].rstrip("/")
+        if not clean_path:
+            clean_path = "/"
+
+        if method == "OPTIONS":
+            response = f"HTTP/1.1 204 No Content\r\n{CORS_HEADERS}\r\n".encode("utf-8")
+            writer.write(response)
+            await writer.drain()
+            await close_writer(writer)
+            return
 
         content_length = 0
         for h in header_lines[1:]:
             if h.lower().startswith("content-length:"):
-                content_length = int(h.split(":", 1)[1].strip())
+                try:
+                    content_length = int(h.split(":", 1)[1].strip())
+                except ValueError:
+                    content_length = 0
                 break
 
         if content_length > MAX_BODY_BYTES:
-            err_body = b'{"error": {"message": "Payload Terlalu Besar (Max 2MB)", "type": "payload_too_large"}}'
-            writer.write(f"HTTP/1.1 413 Payload Too Large\r\nContent-Type: application/json\r\nContent-Length: {len(err_body)}\r\n\r\n".encode("utf-8") + err_body)
-            await writer.drain()
-            writer.close()
+            await send_json_response(writer, 413, "Payload Too Large", {
+                "error": {"message": "Payload Terlalu Besar (Max 2MB)", "type": "payload_too_large"}
+            })
+            await close_writer(writer)
             return
 
         body = b""
         if content_length > 0:
             body = await asyncio.wait_for(reader.readexactly(content_length), timeout=READ_TIMEOUT)
 
-        cors_headers = (
-            "Access-Control-Allow-Origin: *\r\n"
-            "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
-            "Access-Control-Allow-Headers: Content-Type, Authorization\r\n"
-        )
-
-        if method == "OPTIONS":
-            response = f"HTTP/1.1 204 No Content\r\n{cors_headers}\r\n".encode("utf-8")
-            writer.write(response)
-            await writer.drain()
-            writer.close()
-            return
-
-        if path == "/health" or path == "/":
+        if clean_path in ["/health", "/"]:
             status_obj = {
                 "status": "online",
                 "mode": "Direct HTTP RPC (Metode 2 - Tanpa Browser)",
@@ -175,24 +287,18 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
                 "capabilities": {
                     "extended_thinking": True,
                     "session_isolation": True,
-                    "task_vs_chat": True
+                    "task_vs_chat": True,
+                    "streaming": True,
+                    "orjson_accelerated": "orjson" in sys.modules
                 },
                 "supported_models": ["gemini-4-hydrogen", "gemini-pro", "gemini-flash-lite"],
                 "endpoint": f"http://{HTTP_HOST}:{HTTP_PORT}/v1/chat/completions"
             }
-            res_body = json.dumps(status_obj, indent=2).encode("utf-8")
-            response = (
-                f"HTTP/1.1 200 OK\r\n"
-                f"Content-Type: application/json\r\n"
-                f"Content-Length: {len(res_body)}\r\n"
-                f"{cors_headers}\r\n"
-            ).encode("utf-8") + res_body
-            writer.write(response)
-            await writer.drain()
-            writer.close()
+            await send_json_response(writer, 200, "OK", status_obj, indent=True)
+            await close_writer(writer)
             return
 
-        if path == "/v1/models" and method == "GET":
+        if clean_path == "/v1/models" and method == "GET":
             models_obj = {
                 "object": "list",
                 "data": [
@@ -201,39 +307,47 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
                     {"id": "gemini-flash-lite", "object": "model", "owned_by": "google-deepmind", "description": "Quick answers"}
                 ]
             }
-            res_body = json.dumps(models_obj).encode("utf-8")
-            response = (
-                f"HTTP/1.1 200 OK\r\n"
-                f"Content-Type: application/json\r\n"
-                f"Content-Length: {len(res_body)}\r\n"
-                f"{cors_headers}\r\n"
-            ).encode("utf-8") + res_body
-            writer.write(response)
-            await writer.drain()
-            writer.close()
+            await send_json_response(writer, 200, "OK", models_obj)
+            await close_writer(writer)
             return
 
-        if path == "/v1/chat/completions" and method == "POST":
+        if clean_path == "/v1/chat/completions" and method == "POST":
             try:
-                req_json = json.loads(body.decode("utf-8"))
-                messages = req_json.get("messages", [])
+                try:
+                    req_json = json_loads(body)
+                except Exception as e:
+                    await send_json_response(writer, 400, "Bad Request", {
+                        "error": {"message": f"Malformed JSON payload: {e}", "type": "invalid_request_error"}
+                    })
+                    await close_writer(writer)
+                    return
+
+                messages = req_json.get("messages")
+                if not messages or not isinstance(messages, list):
+                    await send_json_response(writer, 400, "Bad Request", {
+                        "error": {"message": "'messages' is a required non-empty array", "type": "invalid_request_error"}
+                    })
+                    await close_writer(writer)
+                    return
+
                 model = req_json.get("model", "gemini-pro")
-                session_id = req_json.get("session_id") or req_json.get("user")
-                
+                session_id = req_json.get("session_id")
+                is_stream = bool(req_json.get("stream", False))
+
                 # Check thinking level
                 thinking_level = req_json.get("thinking_level") or req_json.get("reasoning_effort")
                 extended_thinking = (
-                    req_json.get("extended_thinking", False) or 
-                    str(thinking_level).lower() in ["high", "extended", "tinggi", "true"]
+                    bool(req_json.get("extended_thinking", False)) or
+                    str(thinking_level).lower() in ["high", "extended", "tinggi", "true", "1"]
                 )
 
                 if len(messages) == 1:
-                    prompt = messages[0].get("content", "")
+                    prompt = extract_text_from_content(messages[0].get("content", ""))
                 else:
                     parts = []
                     for m in messages:
                         role = m.get("role", "user")
-                        content = m.get("content", "")
+                        content = extract_text_from_content(m.get("content", ""))
                         if role == "system":
                             parts.append(f"[System Instruction]: {content}")
                         elif role == "user":
@@ -242,18 +356,94 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
                             parts.append(f"Assistant: {content}")
                     prompt = "\n\n".join(parts) + "\n\nAssistant:"
 
+                if not prompt.strip():
+                    await send_json_response(writer, 400, "Bad Request", {
+                        "error": {"message": "Prompt content cannot be empty", "type": "invalid_request_error"}
+                    })
+                    await close_writer(writer)
+                    return
+
+                resolved_model = resolve_target_model(model)
+                completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+                created_ts = int(time.time())
+
+                if is_stream:
+                    headers = (
+                        "HTTP/1.1 200 OK\r\n"
+                        "Content-Type: text/event-stream; charset=utf-8\r\n"
+                        "Cache-Control: no-cache\r\n"
+                        "Connection: keep-alive\r\n"
+                        f"{CORS_HEADERS}\r\n"
+                    ).encode("utf-8")
+                    writer.write(headers)
+                    await writer.drain()
+
+                    # First role chunk
+                    first_chunk = {
+                        "id": completion_id,
+                        "object": "chat.completion.chunk",
+                        "created": created_ts,
+                        "model": resolved_model,
+                        "choices": [{
+                            "index": 0,
+                            "delta": {"role": "assistant", "content": ""},
+                            "finish_reason": None
+                        }]
+                    }
+                    writer.write(b"data: " + json_dumps(first_chunk) + b"\n\n")
+                    await writer.drain()
+
+                    async for chunk in ask_gemini_stream(
+                        prompt,
+                        model=model,
+                        session_id=session_id,
+                        extended_thinking=extended_thinking
+                    ):
+                        delta = chunk.text_delta
+                        if delta:
+                            chunk_obj = {
+                                "id": completion_id,
+                                "object": "chat.completion.chunk",
+                                "created": created_ts,
+                                "model": resolved_model,
+                                "choices": [{
+                                    "index": 0,
+                                    "delta": {"content": delta},
+                                    "finish_reason": None
+                                }]
+                            }
+                            writer.write(b"data: " + json_dumps(chunk_obj) + b"\n\n")
+                            await writer.drain()
+
+                    stop_chunk = {
+                        "id": completion_id,
+                        "object": "chat.completion.chunk",
+                        "created": created_ts,
+                        "model": resolved_model,
+                        "choices": [{
+                            "index": 0,
+                            "delta": {},
+                            "finish_reason": "stop"
+                        }]
+                    }
+                    writer.write(b"data: " + json_dumps(stop_chunk) + b"\n\ndata: [DONE]\n\n")
+                    await writer.drain()
+                    await close_writer(writer)
+                    return
+
+                # Non-streaming response
                 resp_text = await ask_gemini(
-                    prompt, 
-                    model=model, 
-                    session_id=session_id, 
+                    prompt,
+                    model=model,
+                    session_id=session_id,
                     extended_thinking=extended_thinking
                 )
 
                 openai_resp = {
-                    "id": f"chatcmpl-{uuid.uuid4().hex[:12]}",
+                    "id": completion_id,
                     "object": "chat.completion",
-                    "created": int(time.time()),
-                    "model": resolve_target_model(model),
+                    "created": created_ts,
+                    "model": resolved_model,
                     "session_id": session_id,
                     "choices": [
                         {
@@ -271,57 +461,47 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
                         "total_tokens": len(prompt.split()) + len(resp_text.split())
                     }
                 }
-
-                res_body = json.dumps(openai_resp).encode("utf-8")
-                response = (
-                    f"HTTP/1.1 200 OK\r\n"
-                    f"Content-Type: application/json\r\n"
-                    f"Content-Length: {len(res_body)}\r\n"
-                    f"{cors_headers}\r\n"
-                ).encode("utf-8") + res_body
-                writer.write(response)
-                await writer.drain()
+                await send_json_response(writer, 200, "OK", openai_resp)
+                await close_writer(writer)
+                return
 
             except Exception as e:
-                err_body = json.dumps({"error": {"message": str(e), "type": "bridge_error"}}).encode("utf-8")
-                response = (
-                    f"HTTP/1.1 500 Internal Server Error\r\n"
-                    f"Content-Type: application/json\r\n"
-                    f"Content-Length: {len(err_body)}\r\n"
-                    f"{cors_headers}\r\n"
-                ).encode("utf-8") + err_body
-                writer.write(response)
-                await writer.drain()
+                err_body = {
+                    "error": {
+                        "message": str(e),
+                        "type": "bridge_error"
+                    }
+                }
+                await send_json_response(writer, 500, "Internal Server Error", err_body)
+                await close_writer(writer)
+                return
 
-            writer.close()
-            return
-
-        not_found = b"{\"error\": \"Not Found\"}"
-        writer.write(
-            f"HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\nContent-Length: {len(not_found)}\r\n\r\n".encode("utf-8") + not_found
-        )
-        await writer.drain()
-        writer.close()
+        await send_json_response(writer, 404, "Not Found", {"error": "Not Found"})
+        await close_writer(writer)
 
     except Exception as e:
-        print(f"[HTTP Error] {e}")
-        try:
-            writer.close()
-        except:
-            pass
+        print(f"[HTTP Error] {e}", flush=True)
+        await close_writer(writer)
+
 
 async def main():
-    print("=" * 60)
-    print("  🚀 GEMINI DIRECT RPC BRIDGE (Metode 2 - 100% Tanpa Browser)")
-    print("=" * 60)
-    print(f"[*] OpenAI API Server: http://{HTTP_HOST}:{HTTP_PORT}/v1")
-    print(f"[*] Health Check     : http://{HTTP_HOST}:{HTTP_PORT}/health")
-    print("=" * 60)
-
-    await init_client()
+    print("=" * 60, flush=True)
+    print("  🚀 GEMINI DIRECT RPC BRIDGE (Metode 2 - 100% Tanpa Browser)", flush=True)
+    print("=" * 60, flush=True)
+    print(f"[*] OpenAI API Server: http://{HTTP_HOST}:{HTTP_PORT}/v1", flush=True)
+    print(f"[*] Health Check     : http://{HTTP_HOST}:{HTTP_PORT}/health", flush=True)
+    print("=" * 60, flush=True)
 
     server = await asyncio.start_server(http_handler, HTTP_HOST, HTTP_PORT)
+    print(f"[*] Socket listening on http://{HTTP_HOST}:{HTTP_PORT}. Inisialisasi Google client...", flush=True)
+
+    try:
+        await init_client()
+    except Exception as e:
+        print(f"[Bridge Warning] Inisialisasi awal client gagal: {e}", flush=True)
+
     await server.serve_forever()
+
 
 if __name__ == "__main__":
     try:
