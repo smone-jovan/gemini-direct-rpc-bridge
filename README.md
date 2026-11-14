@@ -34,24 +34,31 @@ In the official Google Gemini interface and agentic engineering, **Execution Mod
 
 | Dimension | **Chat Mode** (`"mode": "chat"`) | **Task Mode** (`"mode": "task"`) |
 | :--- | :--- | :--- |
-| **Stateless**<br>*(No `session_id`)* | **1. Stateless Chat**<br>One-off conversational inquiry without history or memory retention. Ideal for quick translations, definitions, and one-liner queries. | **3. Stateless Task**<br>Single-turn autonomous agent execution without history pollution. Runs directly on **4 Argon** (Code & analysis) or **4 Hydrogen** (Everyday help). |
-| **Stateful**<br>*(With `session_id`)* | **2. Stateful Chat**<br>Multi-turn conversational dialogue where conversational context and memory are preserved across turns. | **4. Stateful Task**<br>Multi-turn agentic task where past instructions, decisions, and task state are maintained across consecutive steps. |
+| **Stateless**<br>*(Explicit `"stateless": true`)* | **1. Stateless Chat**<br>One-off conversational inquiry without history or memory retention. Ideal for quick translations, definitions, and one-liner queries. | **3. Stateless Task**<br>Single-turn autonomous agent execution without history pollution. Runs directly on **4 Argon** (Code & analysis) or **4 Hydrogen** (Everyday help). |
+| **Stateful**<br>*(Default / `session_id` / Auto)* | **2. Stateful Chat**<br>Multi-turn conversational dialogue where conversational context and memory are preserved across turns in the same Google thread. | **4. Stateful Task**<br>Multi-turn agentic task where past instructions, decisions, and task state are maintained across consecutive steps with `<ElicitationsGroup>` action cards. |
+
+> 📖 **Deep Dive Specification**: Read [ARCHITECTURE.md](ARCHITECTURE.md) for full empirical reverse-engineering data, HAR capture traces, and protobuf wire specifications.
+
+#### 🔄 Multi-Turn Continuity & Sticky Sessions
+- **Default Stateful**: Sequential requests now automatically continue in the **same Google conversation thread** (`sticky-task-session` or `sticky-chat-session`), completely eliminating fragmented 1-message orphan threads in your browser sidebar.
+- **Auto-Session Derivation**: For clients that do not pass a `session_id` (e.g. Cursor, Continue.dev), the bridge automatically derives a persistent session ID using SHA-256 over the initial user prompt.
+- **Direct Google Thread Attachment**: Pass `"conversation_id": "c_..."` to append turns directly to any existing Google conversation thread from your browser history!
 
 ---
 
-### 🔍 Google Gemini UI Alignment: Chat vs. Task
+### 🔍 Google Gemini UI Alignment: Chat vs. Task (Project Remy)
 
 In Google Gemini's official UI, there is a dedicated toggle pill: **`[ Chat | Task ]`**:
 
 1. **Mode `Chat`**:
-   - Conversational assistant mode.
-   - Access to full model spectrum (`gemini-4-hydrogen`, `gemini-pro`, `gemini-carbon`, `gemini-flash-lite`).
+   - Conversational assistant mode (`featureMode: 0`).
+   - Access to full model spectrum (`gemini-carbon`, `gemini-4-argon`, `gemini-4-hydrogen`, `gemini-flash-lite`). Legacy 3.1 Pro has been purged.
    - Supports manual **Thinking Level** adjustments (`thinking_level: "high"` / `"low"`).
 2. **Mode `Task`** (*Activates `+ Describe task` / "Tag me in! What's next?"*):
-   - Autonomous agentic pipeline.
+   - Autonomous agentic pipeline powered by Google's **Project Remy** (`featureMode: 40`).
    - Strictly restricted by Google to **exactly two engines**:
-     - **`Everyday help`** $\rightarrow$ **4 Hydrogen** (Fast planning, everyday delegation)
-     - **`Code & analysis`** $\rightarrow$ **4 Argon** (Deep code execution & architectural analysis)
+     - **`Everyday help`** $\rightarrow$ **4 Hydrogen** (`model_number: 1`)
+     - **`Code & analysis`** $\rightarrow$ **4 Argon** (`model_number: 8`, identifier `"argon"`)
    - **No Manual Thinking Toggle**: Google omits the manual thinking slider in Task mode because planning and reasoning are handled autonomously by the backend agent loop.
 
 ---
@@ -254,24 +261,31 @@ Dalam antarmuka resmi Google Gemini dan rekayasa AI modern, **Mode Eksekusi (`mo
 
 | Dimensi | **Mode Chat** (`"mode": "chat"`) | **Mode Task** (`"mode": "task"`) |
 | :--- | :--- | :--- |
-| **Stateless**<br>*(Tanpa `session_id`)* | **1. Stateless Chat**<br>Tanya-jawab satu kali tanpa riwayat percakapan. Cocok untuk terjemahan cepat, definisi, atau tanya rumus instan. | **3. Stateless Task**<br>Eksekusi tugas agen otonom satu kali tanpa mencemari riwayat obrolan. Berjalan langsung di **4 Argon** (Code & analysis) atau **4 Hydrogen** (Everyday help). |
-| **Stateful**<br>*(Dengan `session_id`)* | **2. Stateful Chat**<br>Percakapan multi-turn bersambung di mana konteks dan memori percakapan diingat lintas giliran obrolan. | **4. Stateful Task**<br>Tugas otonom bertahap di mana instruksi, keputusan teknis, dan state tugas diingat pada setiap tahapan berikutnya. |
+| **Stateless**<br>*(Eksplisit `"stateless": true`)* | **1. Stateless Chat**<br>Tanya-jawab satu kali tanpa riwayat percakapan. Cocok untuk terjemahan cepat, definisi, atau tanya rumus instan. | **3. Stateless Task**<br>Eksekusi tugas agen otonom satu kali tanpa mencemari riwayat obrolan. Berjalan langsung di **4 Argon** (Code & analysis) atau **4 Hydrogen** (Everyday help). |
+| **Stateful**<br>*(Default / `session_id` / Auto)* | **2. Stateful Chat**<br>Percakapan multi-turn bersambung di mana konteks dan memori percakapan diingat lintas giliran obrolan di thread yang sama. | **4. Stateful Task**<br>Tugas otonom bertahap di thread Task yang sama, memori keputusan terjaga, lengkap dengan action cards `<ElicitationsGroup>`. |
+
+> 📖 **Dokumentasi Mendalam Arsitektur**: Baca [ARCHITECTURE.md](ARCHITECTURE.md) untuk data bedah biner lengkap dari berkas tangkapan HAR (189.9 MB), struktur protobuf WebChannel, dan pemetaan flag Project Remy.
+
+#### 🔄 Multi-Turn Bersambung & Sesi Sticky Default
+- **Default Stateful**: Permintaan berurutan kini otomatis bersambung di **thread Google yang SAMA** (`sticky-task-session` atau `sticky-chat-session`), menghapus masalah tumpukan chat 1-pesan yang terpotong-potong di sidebar browser Anda.
+- **Auto-Session Derivation**: Untuk klien yang tidak mengirimkan `session_id` (seperti Cursor atau Continue.dev), bridge secara otomatis membuat ID sesi persisten dari seed SHA-256 pesan pembuka.
+- **Sambung Langsung ke Thread Web**: Sertakan `"conversation_id": "c_..."` untuk langsung meneruskan giliran obrolan ke thread yang sudah ada di sidebar web Google Gemini Anda!
 
 ---
 
-### 🔍 Penyelarasan Antarmuka Resmi Gemini: Chat vs. Task
+### 🔍 Penyelarasan Antarmuka Resmi Gemini: Chat vs. Task (Project Remy)
 
 Di antarmuka resmi Google Gemini, terdapat tombol fisik pemilih: **`[ Chat | Task ]`**:
 
 1. **Mode `Chat`**:
-   - Mode percakapan umum.
-   - Pilihan model mutakhir sesuai hierarki: **Carbon > Argon > Hydrogen > Flash-Lite** (`gemini-carbon`, `gemini-4-argon`, `gemini-4-hydrogen`, `gemini-flash-lite`). Model lama 3.1 Pro telah dihapus.
+   - Mode percakapan umum (`featureMode: 0`).
+   - Pilihan model mutakhir sesuai hierarki: **Carbon > Argon > Hydrogen > Flash-Lite** (`gemini-carbon`, `gemini-4-argon`, `gemini-4-hydrogen`, `gemini-flash-lite`). Model lama 3.1 Pro telah dihapus total.
    - Menyediakan setelan manual **Thinking Level** (`thinking_level: "high"` / `"low"`).
 2. **Mode `Task`** (*Mengaktifkan input `+ Describe task` / "Tag me in! What's next?"*):
-   - Pipeline agen otonom khusus.
+   - Pipeline agen otonom khusus yang ditenagai oleh **Project Remy** (`featureMode: 40`).
    - Dibatasi secara ketat oleh Google hanya pada **dua mesin penggerak**:
-     - **`Everyday help`** $\rightarrow$ **4 Hydrogen** (Otomasi harian cepat)
-     - **`Code & analysis`** $\rightarrow$ **4 Argon** (Analisis mendalam & rekayasa kode)
+     - **`Everyday help`** $\rightarrow$ **4 Hydrogen** (`model_number: 1`)
+     - **`Code & analysis`** $\rightarrow$ **4 Argon** (`model_number: 8`, identifier string `"argon"`)
    - **Tanpa Toggle Thinking Manual**: Google meniadakan slider thinking manual di mode Task karena proses penalaran dan perencanaan agen sudah berjalan otomatis di arsitektur internal Google.
 
 ---
