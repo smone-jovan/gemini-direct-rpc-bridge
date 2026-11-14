@@ -102,7 +102,7 @@ async def init_client():
 
     # Registrasi 4 Argon (Code & analysis - Argon4p0 dengan model_number: 8 dari body[24])
     argon_model = AvailableModel(
-        model_id="56fdd199312815e2",
+        model_id="argon",
         model_name="gemini-4-argon",
         display_name="Code & analysis",
         description="4 Argon",
@@ -209,17 +209,19 @@ async def ask_gemini(
     target_model, effective_mode = resolve_target_model(model, mode=mode)
     # Di mode TASK resmi Google, thinking toggle ditiadakan (penalaran agentic otomatis di backend)
     actual_thinking = False if effective_mode == "task" else extended_thinking
-    print(f"[Bridge] Mode: {effective_mode.upper()} | Model: '{target_model}' (Session: {session_id or 'Single-turn'}, Thinking: {actual_thinking})...", flush=True)
+    is_task = (effective_mode == "task")
+    print(f"[Bridge] Mode: {effective_mode.upper()} | Model: '{target_model}' (Session: {session_id or 'Single-turn'}, Thinking: {actual_thinking}, RemyTask: {is_task})...", flush=True)
 
     if session_id:
         chat = await get_or_create_session(session_id, target_model)
-        response = await chat.send_message(prompt, extended_thinking=actual_thinking)
+        response = await chat.send_message(prompt, extended_thinking=actual_thinking, task_mode=is_task)
         return response.text
 
     response = await client.generate_content(
         prompt,
         model=target_model,
-        extended_thinking=actual_thinking
+        extended_thinking=actual_thinking,
+        task_mode=is_task
     )
     return response.text
 
@@ -234,17 +236,19 @@ async def ask_gemini_stream(
     client = await ensure_client()
     target_model, effective_mode = resolve_target_model(model, mode=mode)
     actual_thinking = False if effective_mode == "task" else extended_thinking
-    print(f"[Bridge] Mode: {effective_mode.upper()} (Stream) | Model: '{target_model}' (Session: {session_id or 'Single-turn'}, Thinking: {actual_thinking})...", flush=True)
+    is_task = (effective_mode == "task")
+    print(f"[Bridge] Mode: {effective_mode.upper()} (Stream) | Model: '{target_model}' (Session: {session_id or 'Single-turn'}, Thinking: {actual_thinking}, RemyTask: {is_task})...", flush=True)
 
     if session_id:
         chat = await get_or_create_session(session_id, target_model)
-        async for chunk in chat.send_message_stream(prompt, extended_thinking=actual_thinking):
+        async for chunk in chat.send_message_stream(prompt, extended_thinking=actual_thinking, task_mode=is_task):
             yield chunk
     else:
         async for chunk in client.generate_content_stream(
             prompt,
             model=target_model,
-            extended_thinking=actual_thinking
+            extended_thinking=actual_thinking,
+            task_mode=is_task
         ):
             yield chunk
 
