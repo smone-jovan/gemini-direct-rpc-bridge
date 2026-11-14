@@ -399,20 +399,29 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
                 mode = str(req_json.get("mode", "chat")).lower().strip()
                 if mode not in ["task", "chat"]:
                     mode = "chat"
+
+                resolved_model, effective_mode = resolve_target_model(model, mode=mode)
                 session_id = req_json.get("session_id") or req_json.get("conversation_id")
+                is_stateless = bool(req_json.get("stateless", False))
                 is_stream = bool(req_json.get("stream", False))
 
-                # AUTO-SESSION CONTINUATION (Optimized per Gemini 4 Argon Audit):
-                # 1. Turunkan session_id sejak turn pertama menggunakan seed (system + first user)
-                if not session_id:
-                    seed_parts = [
-                        f"{m.get('role')}:{extract_text_from_content(m.get('content', '')).strip()}"
-                        for m in messages
-                        if m.get("role") in ("system", "user")
-                    ][:2]
-                    if seed_parts:
-                        raw_seed = "|".join(seed_parts).encode("utf-8")
-                        session_id = f"auto-{hashlib.sha256(raw_seed).hexdigest()[:16]}"
+                # AUTO-SESSION & STICKY CONTINUATION:
+                # Default bridge adalah STATEFUL / BERSAMBUNG (bukan stateless terpecah-pecah!)
+                if not session_id and not is_stateless:
+                    if len(messages) > 1:
+                        # Jika klien mengirim riwayat pesan multi-turn, turunkan ID sesi dari seed (system + user)
+                        seed_parts = [
+                            f"{m.get('role')}:{extract_text_from_content(m.get('content', '')).strip()}"
+                            for m in messages
+                            if m.get("role") in ("system", "user")
+                        ][:2]
+                        if seed_parts:
+                            raw_seed = "|".join(seed_parts).encode("utf-8")
+                            session_id = f"auto-{hashlib.sha256(raw_seed).hexdigest()[:16]}"
+                    else:
+                        # Jika pesan tunggal dikirim berurutan, gunakan sticky session default
+                        # agar obrolan otomatis bersambung di thread yang sama pada Google Gemini!
+                        session_id = f"sticky-{effective_mode}-session"
 
                 # Check thinking level
                 thinking_level = req_json.get("thinking_level") or req_json.get("reasoning_effort")
@@ -421,7 +430,7 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
                     str(thinking_level).lower() in ["high", "extended", "tinggi", "true", "1"]
                 )
 
-                # Ekstraksi prompt (Optimized per Gemini 4 Argon Audit):
+                # Ekstraksi prompt:
                 # Hanya kirim pesan user paling akhir JIKA sesi sudah aktif di memori bridge!
                 # Jika turn pertama atau sesi belum terinisialisasi di LRU, kirim full context untuk bootstrapping thread.
                 if session_id and session_id in active_sessions:
@@ -448,7 +457,6 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
                     await close_writer(writer)
                     return
 
-                resolved_model, effective_mode = resolve_target_model(model, mode=mode)
                 completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
                 created_ts = int(time.time())
 
