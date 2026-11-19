@@ -26,6 +26,7 @@ audit_*.py
 run_argon_*.py
 *argon*.py
 argon_*.md
+neon_*.md
 test_audit.py
 chrome-extension/
 
