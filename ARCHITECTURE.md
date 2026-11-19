@@ -96,3 +96,35 @@ From decoded `x-goog-ext-525001261-bin`:
 ### 4 Hydrogen (`Everyday help`) Header Specification
 - `Field 5`: `"56fdd199312815e2"`
 - `Field 15`: `1` (Hydrogen internal model number)
+
+---
+
+## 6. Official Update: Migration to Gemini 4 Neon (19 Nov 2026)
+
+Empirical extraction from Google Gemini Web RPC (`otAQ7b` / `GET_USER_STATUS`) on November 19, 2026 revealed a major lineup restructuring:
+
+1. **Model Argon $\to$ Gemini 4 Neon (`Neon4p0`)**:
+   - `model_id`: `e6fa609c3fa255c0` (reassigned by Google)
+   - `display_name`: `Deeper analysis`
+   - `model_name`: `gemini-neon`
+   - `model_number`: `3`
+   - `internal_flag`: `Neon4p0`
+   - Supported Modes: **Chat** (`FEATURE_MODE_UNSPECIFIED: 0`) and **Task** (`FEATURE_MODE_REMY: 40`).
+2. **Model 4 Carbon (`gemini-carbon`)**:
+   - `model_id`: `95a4c0abcba24364`
+   - `display_name`: `Code & complex work`
+   - `model_number`: `8` (took over model_number 8)
+   - Supported Modes: **Chat** and **Task**.
+3. **Model 4 Hydrogen (`gemini-4-hydrogen`)**:
+   - `model_id`: `56fdd199312815e2`
+   - `display_name`: `Everyday help`
+   - `model_number`: `1`
+   - Supported Modes: **Chat** and **Task**.
+4. **Model Auto (`gemini-auto`)**:
+   - `model_id`: `8c46e95b1a07cecc`
+   - `display_name`: `Auto` (Adapts to your needs)
+   - `model_number`: `6`
+   - Supported Modes: **Chat**.
+5. **Backward Compatibility Guarantee**:
+   - Calls specifying `gemini-4-argon` or `argon` automatically route to `gemini-neon` (Model# 3) ensuring zero disruptions for existing pipelines.
+

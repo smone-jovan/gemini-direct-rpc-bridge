@@ -34,7 +34,7 @@ In the official Google Gemini interface and agentic engineering, **Execution Mod
 
 | Dimension | **Chat Mode** (`"mode": "chat"`) | **Task Mode** (`"mode": "task"`) |
 | :--- | :--- | :--- |
-| **Stateless**<br>*(Explicit `"stateless": true`)* | **1. Stateless Chat**<br>One-off conversational inquiry without history or memory retention. Ideal for quick translations, definitions, and one-liner queries. | **3. Stateless Task**<br>Single-turn autonomous agent execution without history pollution. Runs directly on **4 Argon** (Code & analysis) or **4 Hydrogen** (Everyday help). |
+| **Stateless**<br>*(Explicit `"stateless": true`)* | **1. Stateless Chat**<br>One-off conversational inquiry without history or memory retention. Ideal for quick translations, definitions, and one-liner queries. | **3. Stateless Task**<br>Single-turn autonomous agent execution without history pollution. Runs directly on **Gemini 4 Neon** (Deeper analysis), **4 Carbon** (Code & complex work), or **4 Hydrogen** (Everyday help). |
 | **Stateful**<br>*(Default / `session_id` / Auto)* | **2. Stateful Chat**<br>Multi-turn conversational dialogue where conversational context and memory are preserved across turns in the same Google thread. | **4. Stateful Task**<br>Multi-turn agentic task where past instructions, decisions, and task state are maintained across consecutive steps with `<ElicitationsGroup>` action cards. |
 
 > 📖 **Deep Dive Specification**: Read [ARCHITECTURE.md](ARCHITECTURE.md) for full empirical reverse-engineering data, HAR capture traces, and protobuf wire specifications.
@@ -52,13 +52,14 @@ In Google Gemini's official UI, there is a dedicated toggle pill: **`[ Chat | Ta
 
 1. **Mode `Chat`**:
    - Conversational assistant mode (`featureMode: 0`).
-   - Access to full model spectrum (`gemini-carbon`, `gemini-4-argon`, `gemini-4-hydrogen`, `gemini-flash-lite`). Legacy 3.1 Pro has been purged.
+   - Access to latest 4-generation model spectrum (`gemini-carbon`, `gemini-neon`, `gemini-4-hydrogen`, `gemini-auto`). Backward-compatibility alias for `gemini-4-argon` is natively supported.
    - Supports manual **Thinking Level** adjustments (`thinking_level: "high"` / `"low"`).
 2. **Mode `Task`** (*Activates `+ Describe task` / "Tag me in! What's next?"*):
    - Autonomous agentic pipeline powered by Google's **Project Remy** (`featureMode: 40`).
-   - Strictly restricted by Google to **exactly two engines**:
-     - **`Everyday help`** $\rightarrow$ **4 Hydrogen** (`model_number: 1`)
-     - **`Code & analysis`** $\rightarrow$ **4 Argon** (`model_number: 8`, identifier `"argon"`)
+   - Supports the official task engines:
+     - **`Deeper analysis`** $\rightarrow$ **4 Neon** (`model_number: 3`, identifier `"neon"` / `"gemini-neon"`, replaces Argon)
+     - **`Code & complex work`** $\rightarrow$ **4 Carbon** (`model_number: 8`, identifier `"carbon"` / `"gemini-carbon"`)
+     - **`Everyday help`** $\rightarrow$ **4 Hydrogen** (`model_number: 1`, identifier `"gemini-4-hydrogen"`)
    - **No Manual Thinking Toggle**: Google omits the manual thinking slider in Task mode because planning and reasoning are handled autonomously by the backend agent loop.
 
 ---
@@ -164,14 +165,14 @@ curl -X POST http://127.0.0.1:8765/v1/chat/completions \
   }'
 ```
 
-#### 3. Mode 3: Stateless Task (Code & Analysis with 4 Argon)
-You can specify mode via `"mode": "task"` or directly in the model name suffix `"model": "gemini-4-argon:task"`:
+#### 3. Mode 3: Stateless Task (Deep Analysis with Gemini 4 Neon)
+You can specify mode via `"mode": "task"` or directly in the model name suffix `"model": "gemini-neon:task"` (note: `gemini-4-argon:task` is also supported as an alias):
 ```bash
 # Using model suffix (IDE / Cursor friendly)
 curl -X POST http://127.0.0.1:8765/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "gemini-4-argon:task",
+    "model": "gemini-neon:task",
     "messages": [
       {"role": "user", "content": "Analyze dual-pivot quicksort worst-case complexity and provide a C99 implementation."}
     ]
@@ -225,9 +226,9 @@ In your `config.json` for Continue or Cursor AI:
       "apiKey": "local"
     },
     {
-      "title": "Gemini 4 Argon (Local Bridge)",
+      "title": "Gemini 4 Neon (Local Bridge)",
       "provider": "openai",
-      "model": "gemini-4-argon",
+      "model": "gemini-neon",
       "apiBase": "http://127.0.0.1:8765/v1",
       "apiKey": "local"
     }
@@ -261,7 +262,7 @@ Dalam antarmuka resmi Google Gemini dan rekayasa AI modern, **Mode Eksekusi (`mo
 
 | Dimensi | **Mode Chat** (`"mode": "chat"`) | **Mode Task** (`"mode": "task"`) |
 | :--- | :--- | :--- |
-| **Stateless**<br>*(Eksplisit `"stateless": true`)* | **1. Stateless Chat**<br>Tanya-jawab satu kali tanpa riwayat percakapan. Cocok untuk terjemahan cepat, definisi, atau tanya rumus instan. | **3. Stateless Task**<br>Eksekusi tugas agen otonom satu kali tanpa mencemari riwayat obrolan. Berjalan langsung di **4 Argon** (Code & analysis) atau **4 Hydrogen** (Everyday help). |
+| **Stateless**<br>*(Eksplisit `"stateless": true`)* | **1. Stateless Chat**<br>Tanya-jawab satu kali tanpa riwayat percakapan. Cocok untuk terjemahan cepat, definisi, atau tanya rumus instan. | **3. Stateless Task**<br>Eksekusi tugas agen otonom satu kali tanpa mencemari riwayat obrolan. Berjalan langsung di **Gemini 4 Neon** (Deeper analysis), **4 Carbon** (Code & complex work), atau **4 Hydrogen** (Everyday help). |
 | **Stateful**<br>*(Default / `session_id` / Auto)* | **2. Stateful Chat**<br>Percakapan multi-turn bersambung di mana konteks dan memori percakapan diingat lintas giliran obrolan di thread yang sama. | **4. Stateful Task**<br>Tugas otonom bertahap di thread Task yang sama, memori keputusan terjaga, lengkap dengan action cards `<ElicitationsGroup>`. |
 
 > 📖 **Dokumentasi Mendalam Arsitektur**: Baca [ARCHITECTURE.md](ARCHITECTURE.md) untuk data bedah biner lengkap dari berkas tangkapan HAR (189.9 MB), struktur protobuf WebChannel, dan pemetaan flag Project Remy.
@@ -279,13 +280,14 @@ Di antarmuka resmi Google Gemini, terdapat tombol fisik pemilih: **`[ Chat | Tas
 
 1. **Mode `Chat`**:
    - Mode percakapan umum (`featureMode: 0`).
-   - Pilihan model mutakhir sesuai hierarki: **Carbon > Argon > Hydrogen > Flash-Lite** (`gemini-carbon`, `gemini-4-argon`, `gemini-4-hydrogen`, `gemini-flash-lite`). Model lama 3.1 Pro telah dihapus total.
+   - Pilihan model mutakhir sesuai hierarki: **Carbon > Neon > Hydrogen > Auto** (`gemini-carbon`, `gemini-neon`, `gemini-4-hydrogen`, `gemini-auto`). Alias lama `gemini-4-argon` otomatis terpetakan ke Neon.
    - Menyediakan setelan manual **Thinking Level** (`thinking_level: "high"` / `"low"`).
 2. **Mode `Task`** (*Mengaktifkan input `+ Describe task` / "Tag me in! What's next?"*):
    - Pipeline agen otonom khusus yang ditenagai oleh **Project Remy** (`featureMode: 40`).
-   - Dibatasi secara ketat oleh Google hanya pada **dua mesin penggerak**:
-     - **`Everyday help`** $\rightarrow$ **4 Hydrogen** (`model_number: 1`)
-     - **`Code & analysis`** $\rightarrow$ **4 Argon** (`model_number: 8`, identifier string `"argon"`)
+   - Mendukung mesin penggerak task resmi:
+     - **`Deeper analysis`** $\rightarrow$ **4 Neon** (`model_number: 3`, identifier `"neon"` / `"gemini-neon"`, menggantikan Argon)
+     - **`Code & complex work`** $\rightarrow$ **4 Carbon** (`model_number: 8`, identifier `"carbon"` / `"gemini-carbon"`)
+     - **`Everyday help`** $\rightarrow$ **4 Hydrogen** (`model_number: 1`, identifier `"gemini-4-hydrogen"`)
    - **Tanpa Toggle Thinking Manual**: Google meniadakan slider thinking manual di mode Task karena proses penalaran dan perencanaan agen sudah berjalan otomatis di arsitektur internal Google.
 
 ---

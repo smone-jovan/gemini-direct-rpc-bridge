@@ -24,6 +24,8 @@ dist/
 !requirements.txt
 audit_*.py
 run_argon_*.py
+*argon*.py
+argon_*.md
 test_audit.py
 chrome-extension/
 

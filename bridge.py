@@ -4,7 +4,7 @@ Zero browser needed! 100% background HTTP RPC.
 Supports:
 - Multi-Session Isolation (Stateless Execution vs Stateful Chat via session_id)
 - Extended Thinking Toggle (thinking_level: high/low or extended_thinking: true/false)
-- Native Model Selection: gemini-4-hydrogen, gemini-pro (Argon), gemini-flash-lite
+- Native Model Selection: gemini-carbon, gemini-neon (4 Neon / Deeper analysis), gemini-4-hydrogen, gemini-auto
 - Server-Sent Events (SSE) Real-Time Streaming (stream: true)
 - High-Performance orjson serialization with fallback
 - OpenAI-compatible API at http://127.0.0.1:8765/v1
@@ -101,27 +101,33 @@ async def init_client():
     )
     await gemini_client.init()
 
-    # Registrasi 4 Argon (Code & analysis - Argon4p0 dengan model_number: 8 dari body[24])
-    argon_model = AvailableModel(
-        model_id="argon",
-        model_name="gemini-4-argon",
-        display_name="Code & analysis",
-        description="4 Argon",
-        capacity=2,
-        capacity_field=12,
-        model_number=8,
-        is_available=True,
-        aliases=["argon", "4-argon", "code-analysis", "gemini-4-argon", "argon4p0", "code & analysis"]
-    )
-    gemini_client._model_registry["gemini-4-argon"] = argon_model
-    gemini_client._model_registry["argon"] = argon_model
+    # Registrasi & Pemetaan Model 4 Neon (Deeper analysis - Neon4p0 dengan model_number: 3)
+    try:
+        neon_model = gemini_client.resolve_model("neon")
+        if neon_model:
+            gemini_client._model_registry["gemini-neon"] = neon_model
+            gemini_client._model_registry["gemini-4-neon"] = neon_model
+            gemini_client._model_registry["neon"] = neon_model
+            # Backward-compatibility alias: argon -> neon
+            gemini_client._model_registry["gemini-4-argon"] = neon_model
+            gemini_client._model_registry["argon"] = neon_model
+    except Exception as e:
+        print(f"[Bridge Warning] Model Neon tidak ditemukan di RPC registry: {e}", flush=True)
 
-    # Hapus model 3.1 Pro jadul secara total dari sistem
+    # Registrasi & Pemetaan Model 4 Carbon (Code & complex work - model_number: 8)
+    try:
+        carbon_model = gemini_client.resolve_model("carbon")
+        if carbon_model:
+            gemini_client._model_registry["gemini-carbon"] = carbon_model
+            gemini_client._model_registry["carbon"] = carbon_model
+    except Exception as e:
+        print(f"[Bridge Warning] Model Carbon tidak ditemukan di RPC registry: {e}", flush=True)
+
+    # Bersihkan sisa alias lama yang sudah tidak valid
     gemini_client._model_registry.pop("gemini-pro", None)
-    gemini_client._model_registry.pop("e6fa609c3fa255c0", None)
     gemini_client._model_registry.pop("pro", None)
 
-    print("[Bridge] Terhubung sukses ke Google Gemini! (100% Bebas Browser | 3.1 Pro Dihapus | 4 Argon Aktif Model# 8)", flush=True)
+    print("[Bridge] Terhubung sukses ke Google Gemini! (100% Bebas Browser | 4 Neon Aktif Model# 3 | 4 Carbon Aktif Model# 8 | 4 Hydrogen Aktif Model# 1 | Auto Aktif Model# 6)", flush=True)
 
 
 async def ensure_client() -> GeminiClient:
@@ -138,7 +144,7 @@ async def ensure_client() -> GeminiClient:
 def resolve_target_model(model_name: Optional[str], mode: str = "chat") -> tuple[str, str]:
     raw = (model_name or "").lower().strip()
     
-    # Auto-detect mode from model suffix e.g. "gemini-4-argon:task" or "argon:chat"
+    # Auto-detect mode from model suffix e.g. "gemini-neon:task", "neon:task", "argon:task"
     if ":task" in raw:
         mode = "task"
         raw = raw.replace(":task", "").strip()
@@ -148,24 +154,29 @@ def resolve_target_model(model_name: Optional[str], mode: str = "chat") -> tuple
         
     target = raw
 
-    # MODE TASK (Resmi Google: Eksklusif hanya 2 Model - 4 Argon & 4 Hydrogen)
+    # MODE TASK (Resmi Google Project Remy: 4 Neon, 4 Carbon & 4 Hydrogen)
     if mode == "task":
-        if any(k in target for k in ["argon", "code", "analysis", "dev", "prog"]):
-            return "gemini-4-argon", "task"
-        return "gemini-4-hydrogen", "task"
+        if any(k in target for k in ["carbon", "complex"]):
+            return "gemini-carbon", "task"
+        if any(k in target for k in ["hydrogen", "everyday", "fast"]):
+            return "gemini-4-hydrogen", "task"
+        # Default task model: gemini-neon (mendukung 'neon', 'argon', 'code', 'analysis', 'dev', 'prog', 'deeper')
+        return "gemini-neon", "task"
 
-    # MODE CHAT: HIERARKI MUTLAK: Carbon > Argon > Hydrogen > Flash-Lite (3.1 Pro DIBUANG TOTAL!)
-    if "carbon" in target:
+    # MODE CHAT: HIERARKI MUTLAK: Carbon > Neon > Hydrogen > Auto (dengan alias Argon -> Neon)
+    if any(k in target for k in ["carbon", "complex"]):
         return "gemini-carbon", "chat"
-    elif any(k in target for k in ["argon", "code", "analysis"]):
-        return "gemini-4-argon", "chat"
+    elif any(k in target for k in ["neon", "argon", "deeper", "analysis", "code", "dev"]):
+        return "gemini-neon", "chat"
     elif any(k in target for k in ["hydrogen", "everyday", "fast"]):
         return "gemini-4-hydrogen", "chat"
+    elif any(k in target for k in ["auto", "adapt"]):
+        return "gemini-auto", "chat"
     elif any(k in target for k in ["flash", "lite", "quick"]):
-        return "gemini-flash-lite", "chat"
+        return "gemini-auto", "chat"
 
-    # Default umum: 4 Hydrogen
-    return "gemini-4-hydrogen", "chat"
+    # Default umum: gemini-neon
+    return "gemini-neon", "chat"
 
 
 def extract_text_from_content(content) -> str:
@@ -203,7 +214,7 @@ async def get_or_create_session(session_id: str, target_model: str) -> ChatSessi
 
 async def ask_gemini(
     prompt: str,
-    model: str = "gemini-4-hydrogen",
+    model: str = "gemini-neon",
     session_id: Optional[str] = None,
     extended_thinking: bool = False,
     mode: str = "chat"
@@ -231,7 +242,7 @@ async def ask_gemini(
 
 async def ask_gemini_stream(
     prompt: str,
-    model: str = "gemini-4-hydrogen",
+    model: str = "gemini-neon",
     session_id: Optional[str] = None,
     extended_thinking: bool = False,
     mode: str = "chat"
@@ -339,12 +350,13 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
                 "client_initialized": gemini_client is not None,
                 "gemini_ui_modes": ["chat", "task"],
                 "task_models": [
-                    "Everyday help (4 Hydrogen)",
-                    "Code & analysis (4 Argon)"
+                    "Deeper analysis (4 Neon - Model# 3)",
+                    "Code & complex work (4 Carbon - Model# 8)",
+                    "Everyday help (4 Hydrogen - Model# 1)"
                 ],
                 "active_sessions": list(active_sessions.keys()),
                 "capabilities": {
-                    "task_mode": "Only 2 models (4 Hydrogen & 4 Argon) without manual thinking toggle",
+                    "task_mode": "Agentic task execution (4 Neon, 4 Carbon & 4 Hydrogen) without manual thinking toggle",
                     "chat_mode": "Full conversational models with optional thinking toggles",
                     "session_isolation": True,
                     "streaming": True,
@@ -352,9 +364,11 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
                 },
                 "supported_models": [
                     "gemini-carbon",
-                    "gemini-4-argon", 
-                    "gemini-4-hydrogen", 
-                    "gemini-flash-lite"
+                    "gemini-neon",
+                    "gemini-4-neon",
+                    "gemini-4-argon (alias to neon)",
+                    "gemini-4-hydrogen",
+                    "gemini-auto"
                 ],
                 "endpoint": f"http://{HTTP_HOST}:{HTTP_PORT}/v1/chat/completions"
             }
@@ -366,10 +380,12 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
             models_obj = {
                 "object": "list",
                 "data": [
-                    {"id": "gemini-carbon", "object": "model", "owned_by": "google-deepmind", "description": "Most complex work (4 Carbon - Restricted)", "modes": ["chat"]},
-                    {"id": "gemini-4-argon", "object": "model", "owned_by": "google-deepmind", "description": "Code & analysis (4 Argon)", "modes": ["chat", "task"]},
-                    {"id": "gemini-4-hydrogen", "object": "model", "owned_by": "google-deepmind", "description": "Everyday help (4 Hydrogen)", "modes": ["chat", "task"]},
-                    {"id": "gemini-flash-lite", "object": "model", "owned_by": "google-deepmind", "description": "Quick answers (3.5 Flash-Lite)", "modes": ["chat"]}
+                    {"id": "gemini-carbon", "object": "model", "owned_by": "google-deepmind", "description": "Code & complex work (4 Carbon - Model# 8)", "modes": ["chat", "task"]},
+                    {"id": "gemini-neon", "object": "model", "owned_by": "google-deepmind", "description": "Deeper analysis (4 Neon - Model# 3)", "modes": ["chat", "task"]},
+                    {"id": "gemini-4-neon", "object": "model", "owned_by": "google-deepmind", "description": "Deeper analysis (4 Neon - Model# 3)", "modes": ["chat", "task"]},
+                    {"id": "gemini-4-argon", "object": "model", "owned_by": "google-deepmind", "description": "Backward-compatibility alias for 4 Neon", "modes": ["chat", "task"]},
+                    {"id": "gemini-4-hydrogen", "object": "model", "owned_by": "google-deepmind", "description": "Everyday help (4 Hydrogen - Model# 1)", "modes": ["chat", "task"]},
+                    {"id": "gemini-auto", "object": "model", "owned_by": "google-deepmind", "description": "Adapts to your needs (Auto - Model# 6)", "modes": ["chat"]}
                 ]
             }
             await send_json_response(writer, 200, "OK", models_obj)
@@ -395,7 +411,7 @@ async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWrite
                     await close_writer(writer)
                     return
 
-                model = req_json.get("model", "gemini-4-hydrogen")
+                model = req_json.get("model", "gemini-neon")
                 mode = str(req_json.get("mode", "chat")).lower().strip()
                 if mode not in ["task", "chat"]:
                     mode = "chat"
